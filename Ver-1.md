@@ -17,7 +17,7 @@ The detailed build plan for **Version 1.0** — the GyroPhone Android app that t
 | # | Step | Milestone | Depends on | Status |
 |---|------|-----------|------------|--------|
 | 0 | Project scaffold | M1 prep | — | DONE (device install check folds into Step 1 device tests) |
-| 1 | HID transport spike (phone pairs as DS4) | M1 | 0 | IN PROGRESS |
+| 1 | HID transport spike (phone pairs as DS4) | M1 | 0 | DONE |
 | 2 | DS4 hardening (byte-faithful report layer) | M2 prep | 1 | NOT STARTED |
 | 3 | Sensor pipeline (fusion + wheel model) | M2 | 2 | NOT STARTED |
 | 4 | Wheel layout v1 | M2 | 3 | NOT STARTED |
@@ -65,7 +65,7 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 
 ## Step 1 — HID transport spike (phone pairs as DS4)
 
-**Status: IN PROGRESS** (transport proven on Nord 5, 2026-11-08; latency readout + Steam verdict + Nothing Phone 1 remaining) · Milestone: M1 · Depends on: 0
+**Status: DONE** (2026-11-08 — all M1 acceptance criteria passed on two devices) · Milestone: M1 · Depends on: 0
 
 **Goal:** prove the kill-switch assumption — a phone can pose as a DualShock 4 on the PC, with buttons and sticks working.
 
@@ -75,8 +75,8 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 - [x] Connection state machine (Dart `HidBridge`): unpaired → registered → connected → streaming → error, with transitions logged — plus device-initiated bounded reconnect and in-app discoverable request (device findings)
 - [x] Input-report packing: sticks (unsigned bytes, center 128) + buttons (bit fields) — **into report `0x01` for M1, not `0x11`** (spec R5: Windows' in-box stack parses only `0x01`'s standard usages; the `0x11` switch happens in Step 2, faithful to real-DS4 calibration-triggered behavior)
 - [x] Minimal temporary status screen (per [docs/UIUX.md](docs/UIUX.md) interim rule): BT state, device name, guide to pair from PC
-- [ ] Test on Nord 5 + Nothing Phone 1; verify in a Windows gamepad tester (joy.cpl and/or gamepad-tester.com) via Steam-off first, then Steam — **Nord 5 done 2026-11-08: pairs, connects, sticks+buttons correct in joy.cpl, Steam lists the controller**; Nothing Phone 1 pending
-- [ ] Measure input-path latency against the <10 ms budget ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)); record numbers in the spec — instrumented (128-sample rolling window); readout pending
+- [x] Test on Nord 5 + Nothing Phone 1; verify in a Windows gamepad tester (joy.cpl and/or gamepad-tester.com) via Steam-off first, then Steam — **both done 2026-11-08: Nord 5 and Nothing Phone 1 both pair, connect, and drive joy.cpl correctly; Steam lists both as "Sony Computer Entertainment Wireless Controller" and its mapping wizard ran with PlayStation-style input names**
+- [x] Measure input-path latency against the <10 ms budget ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)); record numbers in the spec — **avg 7.85 ms (within budget), p95 23.93 ms (flagged for Step 2)**
 
 **Exit when:** ROADMAP M1 acceptance criteria all pass (two devices, tester-visible inputs, reconnect survives, latency recorded).
 
@@ -262,3 +262,4 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 | 2026-11-07 | Step 0 scaffold: app/ created (com.gyrophone.app, minSdk 28), analyze/test green; device install pending |
 | 2026-11-07 | Step 1 spike implemented: DS4 SDP + byte-exact 356-byte BT descriptor (independently verified), HidPlugin.kt, Dart state machine + 0x01 packer + status screen; analyze zero findings, 23/23 Dart tests, 6/6 Kotlin descriptor tests, APK builds; NDK 28.2 installed; device tests next |
 | 2026-11-08 | Device test on Nord 5 (Android 16): control experiment (blugaemand) proved the platform; our app's payload iterated to working state — in-app discoverable request + DS4 small-report descriptor (79 B) + device-initiated reconnect; **transport proven: pairs, connects, sticks+buttons correct in joy.cpl, Steam lists the controller**. Findings recorded in spec Pitfalls + RESEARCH.md; latency readout, Steam verdict, and Nothing Phone 1 test remain |
+| 2026-11-08 (late) | **M1 COMPLETE.** Nothing Phone 1 (Android 15) paired first-try with the final flow, inputs correct, own "Wireless Controller" name; latency recorded (avg 7.85 ms within the <10 ms budget, p95 23.93 ms flagged for Step 2); Steam lists both phones as "Sony Computer Entertainment Wireless Controller", its wizard ran with PlayStation-style prompts. All 6 ROADMAP M1 criteria ticked; Step 1 → DONE. Next: Step 2 (DS4 hardening) |

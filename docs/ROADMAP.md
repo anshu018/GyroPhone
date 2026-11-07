@@ -21,7 +21,7 @@ Dependency chain: **M1 → M2 → M3 → Phase 1 → Phase 2 → Phase 3 → Pha
 
 Target: a stranger installs nothing on their PC, pairs their phone, and drives a Steam racing game with gyro and rumble inside five minutes.
 
-### M1 — "Hello, gamepad": phone pairs as a DS4 — in progress (transport proven)
+### M1 — "Hello, gamepad": phone pairs as a DS4 — done (2026-11-08)
 
 **Goal.** Prove the transport on real devices. This is the spike that decides whether the plan holds.
 
@@ -33,11 +33,13 @@ Target: a stranger installs nothing on their PC, pairs their phone, and drives a
 
 **Acceptance criteria:**
 - [x] M1 spec written and approved
-- [x] Phone registers as a DualShock 4; PC pairs from Bluetooth settings (2026-11-08, Nord 5; DS4 SDP identity + small-report descriptor — see the spec's R4/Pitfalls for the documented deviation)
-- [x] Buttons and sticks visible and responsive in a Windows gamepad tester (2026-11-08, joy.cpl, user-confirmed)
-- [ ] Works on the user's device and at least one other (Nord 5 ✓; Nothing Phone 1 pending)
+- [x] Phone registers as a DualShock 4; PC pairs from Bluetooth settings (2026-11-08; DS4 SDP identity + the DS4's own small-report descriptor — see the spec's R4/Pitfalls for the documented deviation)
+- [x] Buttons and sticks visible and responsive in a Windows gamepad tester (2026-11-08, joy.cpl, both devices)
+- [x] Works on the user's device and at least one other (Nord 5/Android 16 + Nothing Phone 1/Android 15; the Nothing phone paired first-try with the final flow)
 - [x] State machine survives disconnect/reconnect without app restart (demonstrated live: BT toggles, app restarts, re-pair cycles — auto re-register + device-initiated reconnect)
-- [ ] Input-path latency measured and recorded against the budget in [ARCHITECTURE.md](ARCHITECTURE.md) (instrumented; readout pending)
+- [x] Input-path latency measured and recorded against the budget in [ARCHITECTURE.md](ARCHITECTURE.md) (avg 7.85 ms — within the <10 ms budget; p95 23.93 ms flagged for Step 2)
+
+**Exit:** a working pairing demo on the user's PC; measurements logged. ✓ 2026-11-08
 
 **Exit:** a working pairing demo on the user's PC; measurements logged.
 

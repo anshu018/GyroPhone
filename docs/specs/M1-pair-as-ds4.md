@@ -135,16 +135,23 @@ Minimal, per the [UIUX.md](../UIUX.md) interim rule — look is intentionally te
 - Windows Device Manager hardware IDs after pairing (VID/PID evidence — see Open questions).
 - What Steam (running) lists under Settings → Controller for the paired device.
 
+### R9 — Measurements and evidence (recorded 2026-11-08)
+
+- **Input-path latency (Nord 5, touch → report handed to the BT stack):** avg **7.85 ms**, p95 **23.93 ms** over a 128-sample rolling window (n pinned at the window size once full). The average meets the <10 ms budget in [ARCHITECTURE.md](../ARCHITECTURE.md); the p95 spikes do not, and are flagged for Step 2 — the M2 sensor-rate hot path (no Flutter touch dispatch in the loop) is the path the budget truly binds, and it gets its own measurement there. For reference, the control app's own telemetry on the same hardware read 4.58/6.95/8.59 ms (median/p95/worst).
+- **OEM HID-device profile presence:** enabled on both devices (`bluetooth.profile.hid.device.enabled=true` — Nord 5/Android 16, Nothing Phone 1/Android 15).
+- **Second device:** Nothing Phone 1 (A063, Android 15) paired **first-try** with the battle-tested flow (register → in-app discoverable → PC pairs → connected in 42 s), inputs correct in joy.cpl under the controller's own "Wireless Controller" name.
+- **Steam:** both phones listed simultaneously as "Sony Computer Entertainment Wireless Controller"; Steam's mapping wizard ran interactively with PlayStation-style input names (L3). The definitive DS4-vs-generic classification (click-through) is recorded as the first Step 2 task — see [Open questions](#open-questions).
+
 ## Acceptance criteria
 
-Mirrors [ROADMAP.md](../ROADMAP.md) M1; a box is ticked only after the criterion passes on hardware.
+Mirrors [ROADMAP.md](../ROADMAP.md) M1; a box is ticked only after the criterion passes on hardware. **All six passed on 2026-11-08** (Nord 5 + Nothing Phone 1).
 
-- [ ] M1 spec written and approved
-- [ ] Phone registers as a DualShock 4; PC pairs from Bluetooth settings
-- [ ] Buttons and sticks visible and responsive in a Windows gamepad tester
-- [ ] Works on the user's device and at least one other (OEM quirk check)
-- [ ] State machine survives disconnect/reconnect without app restart
-- [ ] Input-path latency measured and recorded against the budget in ARCHITECTURE.md
+- [x] M1 spec written and approved
+- [x] Phone registers as a DualShock 4; PC pairs from Bluetooth settings
+- [x] Buttons and sticks visible and responsive in a Windows gamepad tester
+- [x] Works on the user's device and at least one other (OEM quirk check)
+- [x] State machine survives disconnect/reconnect without app restart
+- [x] Input-path latency measured and recorded against the budget in ARCHITECTURE.md
 
 ## Task list
 
@@ -184,7 +191,14 @@ Pre-filled from [Ver-1.md](../../Ver-1.md) and the 2026-11-07 research; appended
 
 ## Lessons learned
 
-Filled in when the milestone closes: what actually happened, what the Pitfalls section missed, what the next agent must know.
+Filled in when the milestone closes (2026-11-08):
+
+- **The spike did its job exactly as designed.** The kill-switch assumption — a phone can pose as a DS4 on an unmodified PC — is proven on two devices, and five distinct platform behaviors were discovered cheaply, each recorded in Pitfalls before it could bite again: stale-bond caching, the foreground-pairing requirement, the full-descriptor install failure, registration-slot conflicts, and the Windows name cache.
+- **Control experiments beat log archaeology.** When our pairing kept failing, installing the prior-art app on the same hardware separated "our app is broken" from "the platform is quirky" in ten minutes. Do this first next time.
+- **The last variable was the descriptor.** Subclass, CoD, foreground state, and clean bonds were all exonerated before the descriptor-size finding landed — and even then, the fix stayed byte-faithful: the small descriptor IS the DS4's own report-0x01 section.
+- **The avging latency (7.85 ms) fits the budget; the p95 (23.9 ms) does not.** Do not tune blind: Step 2's sensor-rate path is the one the budget governs, and it needs its own measurement before any optimization.
+- **What the Pitfalls section missed until it bit:** only one app can hold the HID registration and force-stop does not release it (Bluetooth toggle clears it); Windows keeps a device's friendly name across re-pairs; `adb logcat` tag filtering flakes on this machine (use `adb shell "logcat -d | grep …"`); the wireless-debugging pairing dialog shows the VPN's IP when a VPN is active — use `adb mdns services` to find the real address.
+- **Next agent, before touching this step again:** read the Pitfalls section top to bottom, keep the small descriptor for M1, and treat any descriptor change as a full remove-both-ends-and-re-pair cycle on real hardware.
 
 ## Open questions
 
