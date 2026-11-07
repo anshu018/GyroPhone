@@ -26,4 +26,9 @@ class MainActivity : FlutterActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         hidPlugin?.onRequestPermissionsResult(requestCode, grantResults)
     }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        hidPlugin?.onActivityResult(requestCode, resultCode)
+    }
 }

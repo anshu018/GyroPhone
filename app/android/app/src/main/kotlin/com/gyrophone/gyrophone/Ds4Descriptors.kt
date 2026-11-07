@@ -23,9 +23,11 @@ object Ds4Descriptors {
     const val SDP_PROVIDER = "Sony Computer Entertainment"
 
     /**
-     * HID Device subclass from the DS4's SDP record (attribute 0x0202 = 0x08).
-     * Not Android's SUBCLASS2_GAMEPAD (0x02) — the DS4's own record is the
-     * source of truth here.
+     * HID Device subclass from the DS4's own SDP record (attribute 0x0202 = 0x08).
+     * Exonerated on-device: the prior-art control app pairs cleanly on this
+     * hardware with 0x08, so the DS4 byte stays (byte-faithfulness, spec R3).
+     * The real pairing variable was the app being foreground during pairing —
+     * solved by the in-app discoverable request (see Pitfalls).
      */
     const val SDP_SUBCLASS: Byte = 0x08
 
@@ -65,6 +67,34 @@ object Ds4Descriptors {
 
     /** The DS4 Bluetooth HID report descriptor: exactly 356 bytes. */
     val btReportDescriptor: ByteArray = parseHex(DESCRIPTOR_HEX)
+
+    /**
+     * M1 fallback descriptor: ONLY the small-report section of the DS4's own
+     * BT descriptor (the bytes above from `85 01` through the first `81 02`
+     * Rx/Ry block, closed with End Collection) — 80 bytes, byte-identical to
+     * the real DS4's report-0x01 definition. M1 sends only report 0x01, so
+     * this is wire-faithful for everything M1 does.
+     *
+     * Why it exists: on the M1 test hardware (OxygenOS 16 ↔ Windows), pairing
+     * with the full 356-byte descriptor never produced a HID device, while a
+     * minimal small-report descriptor paired cleanly (control experiment).
+     * The full descriptor is kept for Step 2, where the failure is revisited
+     * with a working baseline in hand. See docs/specs/M1-pair-as-ds4.md.
+     */
+    private const val SMALL_DESCRIPTOR_HEX = """
+        05 01 09 05 A1 01 85 01 09 30 09 31 09 32 09 35
+        15 00 26 FF 00 75 08 95 04 81 02 09 39 15 00 25
+        07 75 04 95 01 81 42 05 09 19 01 29 0E 15 00 25
+        01 75 01 95 0E 81 02 75 06 95 01 81 01 05 01 09
+        33 09 34 15 00 26 FF 00 75 08 95 02 81 02 C0
+    """
+
+    /** The small-report descriptor: exactly 79 bytes. */
+    val btReportDescriptorSmall: ByteArray = parseHex(SMALL_DESCRIPTOR_HEX)
+
+    /** What registerApp advertises — the small report while M1 runs. */
+    val activeReportDescriptor: ByteArray
+        get() = btReportDescriptorSmall
 
     private fun parseHex(hex: String): ByteArray {
         val clean = hex.replace(Regex("\\s+"), "")

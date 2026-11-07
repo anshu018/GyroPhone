@@ -50,10 +50,30 @@ class Ds4DescriptorTest {
     }
 
     @Test
+    fun `small-report descriptor is exactly 79 bytes and DS4-faithful`() {
+        val small = Ds4Descriptors.btReportDescriptorSmall
+        assertEquals(79, small.size)
+        assertArrayEquals(
+            byteArrayOf(0x05, 0x01, 0x09, 0x05, 0xA1.toByte(), 0x01, 0x85.toByte(), 0x01),
+            small.copyOf(8),
+        )
+        assertArrayEquals(
+            byteArrayOf(0x75, 0x08, 0x95.toByte(), 0x02, 0x81.toByte(), 0x02, 0xC0.toByte()),
+            small.copyOfRange(small.size - 7, small.size),
+        )
+        // The small descriptor is the full DS4 descriptor's report-0x01 section
+        // plus End Collection — the wire format of report 0x01 is unchanged.
+        val full = descriptor
+        assertArrayEquals(small.copyOf(small.size - 1), full.copyOf(small.size - 1))
+    }
+
+    @Test
     fun `sdp record matches the DS4 identity`() {
         assertEquals("Wireless Controller", Ds4Descriptors.SDP_NAME)
         assertEquals("Game Controller", Ds4Descriptors.SDP_DESCRIPTION)
         assertEquals("Sony Computer Entertainment", Ds4Descriptors.SDP_PROVIDER)
+        // The DS4's own subclass byte — exonerated on-device (the control app
+        // pairs cleanly with 0x08 on the same hardware; see spec Pitfalls).
         assertEquals(0x08.toByte(), Ds4Descriptors.SDP_SUBCLASS)
     }
 

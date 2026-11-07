@@ -121,6 +121,20 @@ class HidBridge {
     appInForeground = false;
   }
 
+  /// Asks the OS to make the phone discoverable (system consent dialog over
+  /// our activity). Pairing must happen while the app is foreground — see the
+  /// Pitfalls section of docs/specs/M1-pair-as-ds4.md.
+  Future<bool> makeDiscoverable() async {
+    try {
+      final allowed = await _invoke('requestDiscoverable') as bool? ?? false;
+      log.state(allowed ? 'discoverable for 5 minutes — pair from the PC now' : 'discoverable request denied');
+      return allowed;
+    } on PlatformException catch (e) {
+      log.error('discoverable request failed', e);
+      return false;
+    }
+  }
+
   /// Packs and sends [state] if it differs from the last sent input.
   /// Returns true when a report went out. Measured end-to-end over the
   /// platform channel (touch → report handed to the BT stack), which is the

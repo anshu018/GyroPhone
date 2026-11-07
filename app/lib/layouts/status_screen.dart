@@ -213,7 +213,7 @@ class _PairingGuide extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('Pair from the PC:'),
-            const Text('1. Keep this app open and the screen on.'),
+            const Text('1. Tap "Make discoverable" below and KEEP THIS APP OPEN.'),
             const Text('2. On the PC: Settings → Bluetooth → Add device.'),
             const Text('3. Pick this phone and accept the passkey on both ends.'),
             const Text('4. Open joy.cpl on the PC and move the pads below.'),
@@ -223,6 +223,14 @@ class _PairingGuide extends StatelessWidget {
                 child: FilledButton(
                   onPressed: bridge.start,
                   child: const Text('Enable controller mode'),
+                ),
+              ),
+            if (!bridge.state.isLinked)
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton(
+                  onPressed: () => unawaited(bridge.makeDiscoverable()),
+                  child: const Text('Make discoverable (5 min)'),
                 ),
               ),
           ],

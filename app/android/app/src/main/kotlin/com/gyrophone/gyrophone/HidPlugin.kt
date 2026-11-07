@@ -58,6 +58,7 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         private const val EVENT_BT_STATE = "btState"
 
         private const val PERMISSION_REQUEST_CODE = 0x4750 // "GP"
+        private const val DISCOVERABLE_REQUEST_CODE = 0x4751 // "GP"+1
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -216,6 +217,8 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         // A permission request in flight must not leave Dart hanging forever.
         pendingPermissionResult?.error("disposed", "plugin torn down during permission request", null)
         pendingPermissionResult = null
+        discoverableResult?.error("disposed", "plugin torn down during discoverable request", null)
+        discoverableResult = null
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
         btHandler.post {
@@ -244,6 +247,7 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
     private fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
             "ensurePermissions" -> ensurePermissions(result)
+            "requestDiscoverable" -> requestDiscoverable(result)
             "register" -> btExecutor.execute { register(result) }
             "unregister" -> btExecutor.execute {
                 val ok = try {
@@ -297,6 +301,41 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
             return
         }
         mainHandler.post { result.success(value) }
+    }
+
+    /**
+     * Makes the phone discoverable for 5 minutes via the system consent
+     * dialog — shown OVER our activity, so the registered app stays in the
+     * foreground while the PC pairs. This is functionally required on this
+     * platform: with the app backgrounded (user in Bluetooth settings), the
+     * stack refuses to complete the HID connection and Windows fails driver
+     * install (docs/specs/M1-pair-as-ds4.md, Pitfalls — observed on-device).
+     */
+    private fun requestDiscoverable(result: Result) {
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.error("no-activity", "discoverable request needs a foreground activity", null)
+            return
+        }
+        val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+            putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+        }
+        discoverableResult = result
+        currentActivity.startActivityForResult(intent, DISCOVERABLE_REQUEST_CODE)
+    }
+
+    private var discoverableResult: Result? = null
+
+    fun onActivityResult(requestCode: Int, resultCode: Int) {
+        if (requestCode != DISCOVERABLE_REQUEST_CODE) return
+        val result = discoverableResult
+        discoverableResult = null
+        val allowed = resultCode != 0 // duration in seconds, 0/canceled = denied
+        logD("discoverable request allowed=$allowed duration=$resultCode")
+        result?.success(allowed)
+        if (allowed) {
+            emit(EVENT_BT_STATE) { mapOf("state" to "discoverable") }
+        }
     }
 
     private fun ensurePermissions(result: Result) {
@@ -357,7 +396,7 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
             Ds4Descriptors.SDP_DESCRIPTION,
             Ds4Descriptors.SDP_PROVIDER,
             Ds4Descriptors.SDP_SUBCLASS,
-            Ds4Descriptors.btReportDescriptor,
+            Ds4Descriptors.activeReportDescriptor,
         )
         val device = hidDevice
         if (device == null) {
