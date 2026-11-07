@@ -16,7 +16,7 @@ The detailed build plan for **Version 1.0** — the GyroPhone Android app that t
 
 | # | Step | Milestone | Depends on | Status |
 |---|------|-----------|------------|--------|
-| 0 | Project scaffold | M1 prep | — | NOT STARTED |
+| 0 | Project scaffold | M1 prep | — | IN PROGRESS |
 | 1 | HID transport spike (phone pairs as DS4) | M1 | 0 | NOT STARTED |
 | 2 | DS4 hardening (byte-faithful report layer) | M2 prep | 1 | NOT STARTED |
 | 3 | Sensor pipeline (fusion + wheel model) | M2 | 2 | NOT STARTED |
@@ -41,17 +41,17 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 
 ## Step 0 — Project scaffold
 
-**Status: NOT STARTED** · Milestone: M1 prep · Depends on: —
+**Status: IN PROGRESS** (analyze/test green 2026-11-07; device install pending USB debugging) · Milestone: M1 prep · Depends on: —
 
 **Goal:** a clean, enforced project structure so every later step lands in the right place.
 
 **Tasks:**
-- [ ] `flutter create` in `app/` with org `com.gyrophone.app` (`--org com.gyrophone --project-name gyrophone`), minSdk **28** in `android/app/build.gradle` (the `BluetoothHidDevice` floor — do not leave the default)
-- [ ] Strict analysis: `flutter_lints` (or stricter) enabled, zero findings
-- [ ] `.gitattributes` at repo root: `* text=auto eol=lf` (ends the CRLF warnings)
+- [x] `flutter create` in `app/` with org `com.gyrophone.app` (`--org com.gyrophone --project-name gyrophone`), minSdk **28** in `android/app/build.gradle` (the `BluetoothHidDevice` floor — do not leave the default) — note: the create command yields `com.gyrophone.gyrophone`; the applicationId was edited to `com.gyrophone.app` after scaffold (see M1 spec R1)
+- [x] Strict analysis: `flutter_lints` (or stricter) enabled, zero findings
+- [x] `.gitattributes` at repo root: `* text=auto eol=lf` (ends the CRLF warnings)
 - [ ] Verify Gradle/JDK: system Java is 22 — if Gradle objects, pin `org.gradle.java.home` for this project; do not change the system Java
 - [ ] Confirm `flutter doctor` stays green; `flutter devices` sees a connected phone once USB debugging is enabled
-- [ ] Commit: `chore: scaffold flutter app (com.gyrophone.app, minSdk 28)`
+- [x] Commit: `chore: scaffold flutter app (com.gyrophone.app, minSdk 28)`
 
 **Exit when:** `flutter analyze` and `flutter test` pass on a fresh clone; app builds and installs on the Nord 5 (`flutter run`).
 
@@ -258,3 +258,5 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 | Date | Event |
 |------|-------|
 | 2026-11-07 | Ver-1 plan written; all steps NOT STARTED |
+| 2026-11-07 | M1 spec written and approved (`docs/specs/M1-pair-as-ds4.md`); transport research recorded in RESEARCH.md |
+| 2026-11-07 | Step 0 scaffold: app/ created (com.gyrophone.app, minSdk 28), analyze/test green; device install pending |
