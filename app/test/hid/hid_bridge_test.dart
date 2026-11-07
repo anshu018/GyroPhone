@@ -13,6 +13,8 @@ class FakePlugin {
 
   bool permissionGranted = true;
   bool registerFails = false;
+  bool sendSucceeds = true;
+  bool sendThrows = false;
   List<Map<String, Object?>> hosts = const [];
 
   Future<dynamic> call(String method, [dynamic args]) async {
@@ -26,13 +28,16 @@ class FakePlugin {
         if (registerFails) {
           throw PlatformException(code: 'bt-off', message: 'adapter off');
         }
-        return true;
+        return 'sent';
       case 'connect':
         return true;
       case 'getHosts':
         return hosts;
       case 'sendReport':
-        return true;
+        if (sendThrows) {
+          throw PlatformException(code: 'send', message: 'not connected');
+        }
+        return sendSucceeds;
       default:
         throw StateError('unexpected method $method');
     }
@@ -155,7 +160,6 @@ void main() {
       bridge.handlePlatformEvent({'event': 'btState', 'state': 'off'});
       expect(bridge.state, HidState.unregistered);
 
-      plugin.registerFails = false;
       bridge.handlePlatformEvent({'event': 'btState', 'state': 'on'});
       await pump();
       expect(plugin.count('register'), 2, reason: 're-registered after BT came back');
@@ -191,6 +195,57 @@ void main() {
         reason: 'bounded retries: 1 initial + 3 re-registers, then give up',
       );
       expect(bridge.state, HidState.unregistered);
+    });
+
+    test('a rejected send is not recorded as success and is re-sent later', () async {
+      await startAndRegister();
+      bridge.handlePlatformEvent({
+        'event': 'connectionState',
+        'address': 'AA:BB:CC:DD:EE:FF',
+        'name': 'PC',
+        'state': 'connected',
+      });
+
+      plugin.sendSucceeds = false;
+      final rejected = await bridge.sendState(Ds4ReportState.neutral);
+      expect(rejected, isFalse, reason: 'the stack refused the report');
+      expect(bridge.state, HidState.connected, reason: 'connection truth comes from events, not sends');
+      expect(bridge.latencyStats.samples, 0, reason: 'a rejected send has no meaningful latency');
+
+      plugin.sendSucceeds = true;
+      final retried = await bridge.sendState(Ds4ReportState.neutral);
+      expect(retried, isTrue, reason: 'the failed send must not poison the dedupe');
+      expect(bridge.latencyStats.samples, 1);
+    });
+
+    test('a thrown send marks the bridge errored and invalidates the dedupe', () async {
+      await startAndRegister();
+      bridge.handlePlatformEvent({
+        'event': 'connectionState',
+        'address': 'AA:BB:CC:DD:EE:FF',
+        'name': 'PC',
+        'state': 'connected',
+      });
+      await bridge.sendState(Ds4ReportState.neutral);
+
+      plugin.sendThrows = true;
+      expect(await bridge.sendState(Ds4ReportState.neutral.copyWith(cross: true)), isFalse);
+      expect(bridge.state, HidState.error);
+    });
+
+    test('appStatus(registered) while streaming does not regress the state', () async {
+      await startAndRegister();
+      bridge.handlePlatformEvent({
+        'event': 'connectionState',
+        'address': 'AA:BB:CC:DD:EE:FF',
+        'name': 'PC',
+        'state': 'connected',
+      });
+      await bridge.sendState(Ds4ReportState.neutral);
+      expect(bridge.state, HidState.streaming);
+
+      bridge.handlePlatformEvent({'event': 'appStatus', 'registered': true});
+      expect(bridge.state, HidState.streaming, reason: 're-registration while linked must not lie');
     });
 
     test('host requests are logged, not lost', () async {

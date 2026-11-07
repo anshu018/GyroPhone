@@ -38,10 +38,11 @@ import java.util.concurrent.Executor
  * Flutter via [mainHandler] because the platform channel sinks are main-thread
  * only.
  *
- * Permissions: the Dart side calls [ensurePermissions] before anything else;
- * every method here still fails loudly (channel error) if [BLUETOOTH_CONNECT]
- * is missing — a silent failure here is exactly the bug class that costs days
- * on a real device (see docs/specs/M1-pair-as-ds4.md, Pitfalls).
+ * Permissions: the Dart side calls [ensurePermissions] before anything else.
+ * Registration fails loudly on the channel if [BLUETOOTH_CONNECT] is missing;
+ * the other methods log the reason and return false/empty rather than throw —
+ * a silent failure here is exactly the bug class that costs days on a real
+ * device (see docs/specs/M1-pair-as-ds4.md, Pitfalls).
  */
 class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
 
@@ -75,8 +76,13 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
     private var proxyRequested = false
     private var pendingRegisterSdp: BluetoothHidDeviceAppSdpSettings? = null
 
-    /** Last input report 0x01 sent, kept so GET_REPORT(0x01) can be answered. */
-    private var lastInputReport: ByteArray = ByteArray(Ds4Descriptors.INPUT_SMALL_PAYLOAD_SIZE)
+    /** Last input report 0x01 sent, kept so GET_REPORT(0x01) can be answered.
+     *  Initialized to the neutral report (sticks centered, hat released) —
+     *  "the current report" before the first send is neutral, not zeroed. */
+    private var lastInputReport: ByteArray = byteArrayOf(
+        0x80.toByte(), 0x80.toByte(), 0x80.toByte(), 0x80.toByte(),
+        0x08, 0x00, 0x00, 0x00, 0x00,
+    )
 
     private var pendingPermissionResult: Result? = null
     private var activity: Activity? = null
@@ -103,18 +109,28 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
 
         override fun onGetReport(device: BluetoothDevice, type: Byte, id: Byte, bufferSize: Int) {
             logD("onGetReport type=$type id=$id bufferSize=$bufferSize")
-            if (type == BluetoothHidDevice.REPORT_TYPE_INPUT && id == Ds4Descriptors.REPORT_ID_INPUT_SMALL) {
-                val reply = ByteArray(maxOf(bufferSize, lastInputReport.size))
-                lastInputReport.copyInto(reply)
-                hidDevice?.replyReport(device, type, id, reply)
-            } else if (type == BluetoothHidDevice.REPORT_TYPE_FEATURE && id == Ds4Descriptors.FEATURE_ID_CALIBRATION) {
-                // M1 replies with zeros; real calibration values are Step 2
-                // (docs/specs/M1-pair-as-ds4.md R6). Windows never asks; a
-                // Steam DS4 path would — the log entry is the evidence.
-                hidDevice?.replyReport(device, type, id, ByteArray(maxOf(bufferSize, Ds4Descriptors.FEATURE_CALIBRATION_SIZE)))
-            } else {
-                logD("onGetReport unsupported: type=$type id=$id")
-                hidDevice?.reportError(device, BluetoothHidDevice.ERROR_RSP_UNSUPPORTED_REQ)
+            try {
+                if (type == BluetoothHidDevice.REPORT_TYPE_INPUT && id == Ds4Descriptors.REPORT_ID_INPUT_SMALL) {
+                    val reply = ByteArray(maxOf(bufferSize, lastInputReport.size))
+                    lastInputReport.copyInto(reply)
+                    val replied = hidDevice?.replyReport(device, type, id, reply) ?: false
+                    if (!replied) logD("replyReport rejected (input 0x01)")
+                } else if (type == BluetoothHidDevice.REPORT_TYPE_FEATURE && id == Ds4Descriptors.FEATURE_ID_CALIBRATION) {
+                    // M1 replies with zeros; real calibration values are Step 2
+                    // (docs/specs/M1-pair-as-ds4.md R6). Windows never asks; a
+                    // Steam DS4 path would — the log entry is the evidence.
+                    val reply = ByteArray(maxOf(bufferSize, Ds4Descriptors.FEATURE_CALIBRATION_SIZE))
+                    val replied = hidDevice?.replyReport(device, type, id, reply) ?: false
+                    if (!replied) logD("replyReport rejected (feature 0x02)")
+                } else {
+                    logD("onGetReport unsupported: type=$type id=$id")
+                    hidDevice?.reportError(device, BluetoothHidDevice.ERROR_RSP_UNSUPPORTED_REQ)
+                }
+            } catch (e: Exception) {
+                // SecurityException (permission revoked mid-session) or an
+                // IllegalStateException from a stale proxy must not take the
+                // process down from a binder callback.
+                Log.e(TAG, "onGetReport handling failed", e)
             }
             emitHostRequest("getReport", type = type, id = id)
         }
@@ -124,7 +140,11 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
             // onInterruptData (interrupt channel). M1 only records them; real
             // consumption is Step 2/5.
             logD("onSetReport type=$type id=$id length=${data.size}")
-            hidDevice?.reportError(device, BluetoothHidDevice.ERROR_RSP_SUCCESS)
+            try {
+                hidDevice?.reportError(device, BluetoothHidDevice.ERROR_RSP_SUCCESS)
+            } catch (e: Exception) {
+                Log.e(TAG, "onSetReport handshake failed", e)
+            }
             emitHostRequest("setReport", type = type, id = id, length = data.size)
         }
 
@@ -178,7 +198,13 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
             context,
             btStateReceiver,
             IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
-            ContextCompat.RECEIVER_NOT_EXPORTED,
+            // EXPORTED, not NOT_EXPORTED: ACTION_STATE_CHANGED can be delivered
+            // from the Bluetooth mainline-module process, and NOT_EXPORTED
+            // silently drops it on some Android 14+ builds (Google issue
+            // 302209811). The action is a protected broadcast — nothing can
+            // spoof it — so EXPORTED is safe here. Delivery is verified on
+            // both R9 devices; onAppStatusChanged stays the backup truth.
+            ContextCompat.RECEIVER_EXPORTED,
         )
     }
 
@@ -187,6 +213,9 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
     }
 
     fun dispose() {
+        // A permission request in flight must not leave Dart hanging forever.
+        pendingPermissionResult?.error("disposed", "plugin torn down during permission request", null)
+        pendingPermissionResult = null
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
         btHandler.post {
@@ -312,7 +341,16 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         }
         if (hidDevice == null && !proxyRequested) {
             proxyRequested = true
-            localAdapter.getProfileProxy(context, proxyListener, BluetoothProfile.HID_DEVICE)
+            val requested = localAdapter.getProfileProxy(context, proxyListener, BluetoothProfile.HID_DEVICE)
+            if (!requested) {
+                // The profile is absent on some OEM builds — fail loudly so
+                // Dart shows an error instead of waiting forever.
+                proxyRequested = false
+                mainHandler.post {
+                    result.error("no-profile", "HID device profile unavailable on this device", null)
+                }
+                return
+            }
         }
         val sdp = BluetoothHidDeviceAppSdpSettings(
             Ds4Descriptors.SDP_NAME,
@@ -326,7 +364,7 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
             // Proxy not connected yet — onServiceConnected registers.
             pendingRegisterSdp = sdp
             logD("register queued until HID_DEVICE proxy connects")
-            mainHandler.post { result.success(true) }
+            mainHandler.post { result.success("queued") }
             return
         }
         val queued = try {
@@ -338,20 +376,35 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
             return
         }
         logD("registerApp sent=$queued")
-        mainHandler.post { result.success(queued) }
+        // "sent" / "queued" describes what happened; registration truth is
+        // still onAppStatusChanged (docs/specs/M1-pair-as-ds4.md R2).
+        mainHandler.post { result.success(if (queued) "sent" else "rejected") }
     }
 
     private val proxyListener = object : BluetoothProfile.ServiceListener {
         override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
             if (profile != BluetoothProfile.HID_DEVICE) return
             logD("HID_DEVICE proxy connected")
-            val device = proxy as BluetoothHidDevice
-            hidDevice = device
-            val sdp = pendingRegisterSdp
-            pendingRegisterSdp = null
-            if (sdp != null) {
-                device.registerApp(sdp, null, null, btExecutor, hidCallback)
-                logD("queued registerApp sent")
+            // Registration happens on the Bluetooth thread with the same
+            // guards as an explicit register call — never on the binder
+            // thread, and never without the permission re-checked.
+            btHandler.post {
+                val device = proxy as BluetoothHidDevice
+                hidDevice = device
+                val sdp = pendingRegisterSdp
+                pendingRegisterSdp = null
+                if (sdp == null) return@post
+                if (!hasConnectPermission()) {
+                    logD("queued registerApp dropped: BLUETOOTH_CONNECT revoked")
+                    return@post
+                }
+                val queued = try {
+                    device.registerApp(sdp, null, null, btExecutor, hidCallback)
+                } catch (e: Exception) {
+                    Log.e(TAG, "queued registerApp failed", e)
+                    false
+                }
+                logD("queued registerApp sent=$queued")
             }
         }
 
@@ -365,9 +418,15 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
 
     @SuppressLint("MissingPermission")
     private fun connect(address: String): Boolean {
-        if (!hasConnectPermission()) return false
-        val device = hidDevice ?: return false.also { logD("connect failed: not registered") }
-        val remote = adapter?.getRemoteDevice(address) ?: return false
+        if (!hasConnectPermission()) {
+            logD("connect($address) failed: BLUETOOTH_CONNECT missing")
+            return false
+        }
+        val device = hidDevice ?: return false.also { logD("connect($address) failed: not registered") }
+        val localAdapter = adapter ?: return false.also { logD("connect($address) failed: adapter unavailable") }
+        val remote = remoteDevice(localAdapter, address) ?: return false.also {
+            logD("connect($address) failed: malformed address")
+        }
         val ok = device.connect(remote)
         logD("connect($address) sent=$ok")
         return ok
@@ -375,8 +434,15 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
 
     @SuppressLint("MissingPermission")
     private fun getHosts(): List<Map<String, Any?>> {
-        if (!hasConnectPermission()) return emptyList()
-        val device = hidDevice ?: return emptyList()
+        if (!hasConnectPermission()) {
+            logD("getHosts failed: BLUETOOTH_CONNECT missing")
+            return emptyList()
+        }
+        val device = hidDevice
+        if (device == null) {
+            logD("getHosts failed: not registered")
+            return emptyList()
+        }
         val states = intArrayOf(
             BluetoothProfile.STATE_CONNECTED,
             BluetoothProfile.STATE_CONNECTING,
@@ -394,16 +460,43 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
 
     @SuppressLint("MissingPermission")
     private fun sendReport(address: String, id: Byte, data: ByteArray): Boolean {
-        if (!hasConnectPermission()) return false
-        val device = hidDevice ?: return false.also { logD("sendReport failed: not registered") }
-        val remote = adapter?.getRemoteDevice(address) ?: return false
-        if (id == Ds4Descriptors.REPORT_ID_INPUT_SMALL) {
-            data.copyInto(lastInputReport)
+        if (!hasConnectPermission()) {
+            logD("sendReport failed: BLUETOOTH_CONNECT missing")
+            return false
         }
-        val ok = device.sendReport(remote, id.toInt(), data)
+        val device = hidDevice ?: return false.also { logD("sendReport failed: not registered") }
+        val localAdapter = adapter ?: return false.also { logD("sendReport failed: adapter unavailable") }
+        val remote = remoteDevice(localAdapter, address) ?: return false.also {
+            logD("sendReport failed: malformed address")
+        }
+        if (id == Ds4Descriptors.REPORT_ID_INPUT_SMALL) {
+            if (data.size == lastInputReport.size) {
+                data.copyInto(lastInputReport)
+            } else {
+                // Our own Dart side always sends 9 bytes; a size mismatch
+                // means a caller bug — log it instead of crashing the thread.
+                logD("sendReport: unexpected 0x01 payload size ${data.size}, not cached")
+            }
+        }
+        val ok = try {
+            device.sendReport(remote, id.toInt(), data)
+        } catch (e: Exception) {
+            Log.e(TAG, "sendReport failed", e)
+            false
+        }
         if (!ok) logD("sendReport rejected id=$id length=${data.size}")
         return ok
     }
+
+    /** getRemoteDevice throws IllegalArgumentException on a malformed
+     *  address; the address comes from callbacks and callers, so guard it. */
+    @SuppressLint("MissingPermission")
+    private fun remoteDevice(adapter: BluetoothAdapter, address: String): BluetoothDevice? =
+        try {
+            adapter.getRemoteDevice(address)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
 
     private fun hasConnectPermission(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||

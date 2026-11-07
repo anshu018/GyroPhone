@@ -49,11 +49,12 @@ GyroPad turns a phone into a cockpit controller. Tier 1 (current): an Android ap
 - Surface disagreements with reasoning **before** complying silently — that is what a partner does; a wrong plan executed perfectly is still wrong.
 - When a decision belongs to the user (scope, design, sequencing, money), ask. Guessing is never cheaper.
 
-## Commands (fill in as the app lands)
+## Commands
 
 ```bash
-# cd app && flutter analyze && flutter test
-# cd app && flutter run            # user's Android device via USB debugging
+cd app && flutter analyze && flutter test                  # Dart gate (CONVENTIONS.md)
+cd app/android && ./gradlew testDebugUnitTest              # Kotlin JVM tests (descriptor integrity)
+cd app && flutter run                                      # user's Android device via USB debugging
 ```
 
 ## Hard rules

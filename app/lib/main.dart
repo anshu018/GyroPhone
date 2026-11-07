@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'hid/ds4_report.dart';
 import 'hid/hid_bridge.dart';
 import 'layouts/status_screen.dart';
 
@@ -47,8 +48,16 @@ class _GyroPhoneAppState extends State<GyroPhoneApp> with WidgetsBindingObserver
     // re-registers on resume (docs/specs/M1-pair-as-ds4.md R2/R7).
     if (state == AppLifecycleState.resumed) {
       _bridge.appResumed();
-    } else if (state == AppLifecycleState.paused) {
+      return;
+    }
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
       _bridge.appPaused();
+      // Focus loss must never leave a held button or displaced stick on the
+      // host (spec R5): release everything. Dedupe makes this a no-op when
+      // nothing is held.
+      unawaited(_bridge.sendState(Ds4ReportState.neutral));
     }
   }
 

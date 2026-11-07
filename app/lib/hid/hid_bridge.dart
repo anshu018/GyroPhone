@@ -88,6 +88,10 @@ class HidBridge {
     _eventSubscription ??= _eventStream().listen(handlePlatformEvent, onError: (Object e) {
       log.error('event stream error', e);
       _transition(HidState.error, 'platform event stream failed');
+      // A dead subscription must not linger: the next start() re-subscribes,
+      // otherwise every later retry runs against a closed channel.
+      unawaited(_eventSubscription?.cancel());
+      _eventSubscription = null;
     });
     await _ensurePermissionsAndRegister();
   }
@@ -133,11 +137,18 @@ class HidBridge {
 
     final watch = Stopwatch()..start();
     try {
-      await _invoke('sendReport', {
+      final sent = await _invoke('sendReport', {
         'address': hostAddress,
         'id': Ds4ReportPacker.reportIdSmall,
         'data': payload,
-      });
+      }) as bool? ?? false;
+      if (!sent) {
+        // The stack refused the report (Bluetooth dropped mid-send, stale
+        // proxy). The dedupe must not believe this input was delivered.
+        _packer.invalidateLastSent();
+        log.bluetooth('sendReport rejected by the stack');
+        return false;
+      }
       watch.stop();
       _recordLatency(watch.elapsedMicroseconds / 1000.0);
       if (_state == HidState.connected) {
@@ -145,9 +156,11 @@ class HidBridge {
       }
       return true;
     } on PlatformException catch (e) {
+      _packer.invalidateLastSent();
       _transition(HidState.error, 'sendReport failed: ${e.code}');
       return false;
     } on MissingPluginException {
+      _packer.invalidateLastSent();
       _transition(HidState.unregistered, 'platform channel unavailable during send');
       return false;
     }
@@ -208,6 +221,12 @@ class HidBridge {
   void _onAppStatus(bool registered) {
     if (registered) {
       _foregroundUnregisterStreak = 0;
+      if (_state.isLinked) {
+        // The OS can re-emit registration success while a host is linked;
+        // regressing to "registered" would lie about the connection.
+        log.state('redundant appStatus(registered) while linked — ignored');
+        return;
+      }
       _transition(HidState.registered, 'registered as DS4 — pair from the PC now');
       _connectKnownHost();
       return;
@@ -240,6 +259,9 @@ class HidBridge {
     }
     switch (platformState) {
       case 'connected':
+        // Force a fresh report on (re)connect — the host's cached state is
+        // whatever it last saw; a real DS4 sends a full report here.
+        _packer.invalidateLastSent();
         _transition(HidState.connected, 'host connected: ${name ?? address}');
       case 'connecting':
         log.state('host connecting: ${name ?? address}');

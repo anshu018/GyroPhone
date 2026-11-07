@@ -73,30 +73,9 @@ class Ds4ReportState {
   final int l2Analog;
   final int r2Analog;
 
-  /// Wire-relevant equality: everything except the report counter, so the
-  /// packer can dedupe without the counter defeating the comparison.
-  bool sameInputAs(Ds4ReportState other) =>
-      leftX == other.leftX &&
-      leftY == other.leftY &&
-      rightX == other.rightX &&
-      rightY == other.rightY &&
-      hat == other.hat &&
-      square == other.square &&
-      cross == other.cross &&
-      circle == other.circle &&
-      triangle == other.triangle &&
-      l1 == other.l1 &&
-      r1 == other.r1 &&
-      l2 == other.l2 &&
-      r2 == other.r2 &&
-      share == other.share &&
-      options == other.options &&
-      l3 == other.l3 &&
-      r3 == other.r3 &&
-      ps == other.ps &&
-      touchpadClick == other.touchpadClick &&
-      l2Analog == other.l2Analog &&
-      r2Analog == other.r2Analog;
+  /// Wire-relevant equality is the packer's byte-level dedupe below; it is
+  /// strictly stronger than a field comparison (it also catches any drift
+  /// between state and wire encoding).
 
   Ds4ReportState copyWith({
     int? leftX,
@@ -168,6 +147,14 @@ class Ds4ReportPacker {
   final Uint8List _candidate = Uint8List(payloadSize);
   final Uint8List _lastSent = Uint8List(payloadSize);
   bool _hasLastSent = false;
+
+  /// Forgets the last sent report so the next [packIfChanged] always packs.
+  /// Call after a failed send — otherwise the dedupe believes that input was
+  /// delivered, the host keeps the previous physical state, and returning to
+  /// that exact input later would never be sent (stuck button/axis).
+  void invalidateLastSent() {
+    _hasLastSent = false;
+  }
 
   /// Packs [state] into [out] (must be at least [payloadSize] bytes).
   /// Returns true when the input changed since the previous send and [out]

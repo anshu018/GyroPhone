@@ -105,12 +105,14 @@ void main() {
       expect(packer.packIfChanged(Ds4ReportState.neutral.copyWith(cross: true), out), isFalse);
     });
 
-    test('sameInputAs ignores nothing wire-relevant', () {
-      expect(
-        Ds4ReportState.neutral.sameInputAs(Ds4ReportState.neutral.copyWith(l2Analog: 5)),
-        isFalse,
-      );
-      expect(Ds4ReportState.neutral.sameInputAs(Ds4ReportState.neutral), isTrue);
+    test('same input after an invalidated send is packed again', () {
+      final packer = Ds4ReportPacker();
+      final out = Uint8List(Ds4ReportPacker.payloadSize);
+      expect(packer.packIfChanged(Ds4ReportState.neutral, out), isTrue);
+      // A failed send must not poison the dedupe: after invalidateLastSent,
+      // the very same input packs again so the host never holds stale state.
+      packer.invalidateLastSent();
+      expect(packer.packIfChanged(Ds4ReportState.neutral, out), isTrue);
     });
   });
 }

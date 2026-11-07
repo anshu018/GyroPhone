@@ -19,8 +19,38 @@ class StatusScreen extends StatefulWidget {
   State<StatusScreen> createState() => _StatusScreenState();
 }
 
-class _StatusScreenState extends State<StatusScreen> {
+class _StatusScreenState extends State<StatusScreen> with WidgetsBindingObserver {
   Ds4ReportState _input = Ds4ReportState.neutral;
+
+  /// Bumped on focus loss so the stick pads rebuild from scratch — a pad
+  /// canceled mid-drag must not resurrect its held position on the host.
+  int _inputGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      // Reset to neutral unconditionally: the wire was already neutralized by
+      // main.dart, and the pads must not resurrect a held drag visually.
+      setState(() {
+        _input = Ds4ReportState.neutral;
+        _inputGeneration += 1;
+      });
+    }
+  }
 
   void _send(Ds4ReportState next) {
     setState(() => _input = next);
@@ -47,6 +77,7 @@ class _StatusScreenState extends State<StatusScreen> {
                     child: Row(
                       children: [
                         _StickPad(
+                          key: ValueKey('L-$_inputGeneration'),
                           label: 'L',
                           onChanged: (dx, dy) => _send(_input.copyWith(
                             leftX: _axisByte(dx),
@@ -114,6 +145,7 @@ class _StatusScreenState extends State<StatusScreen> {
                         ),
                         const SizedBox(width: 12),
                         _StickPad(
+                          key: ValueKey('R-$_inputGeneration'),
                           label: 'R',
                           onChanged: (dx, dy) => _send(_input.copyWith(
                             rightX: _axisByte(dx),
@@ -223,7 +255,7 @@ class _LogTail extends StatelessWidget {
 /// A draggable stick pad. Reports normalized offsets in [-1, 1] with the pad
 /// center as origin, negative dy for up; snaps back to center on release.
 class _StickPad extends StatefulWidget {
-  const _StickPad({required this.label, required this.onChanged});
+  const _StickPad({super.key, required this.label, required this.onChanged});
 
   final String label;
   final void Function(double dx, double dy) onChanged;
@@ -245,6 +277,11 @@ class _StickPadState extends State<_StickPad> {
     widget.onChanged(_normalized.dx, _normalized.dy);
   }
 
+  void _release() {
+    setState(() => _normalized = Offset.zero);
+    widget.onChanged(0, 0);
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -254,10 +291,8 @@ class _StickPadState extends State<_StickPad> {
           onPanStart: (details) =>
               _onPanUpdate(DragUpdateDetails(globalPosition: details.globalPosition, localPosition: details.localPosition, delta: Offset.zero), maxRadius),
           onPanUpdate: (details) => _onPanUpdate(details, maxRadius),
-          onPanEnd: (_) {
-            setState(() => _normalized = Offset.zero);
-            widget.onChanged(0, 0);
-          },
+          onPanEnd: (_) => _release(),
+          onPanCancel: _release,
           child: Container(
             width: maxRadius * 2,
             height: maxRadius * 2,
