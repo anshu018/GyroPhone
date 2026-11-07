@@ -42,6 +42,7 @@ class HidBridge {
     required this._invoke,
     required this._eventStream,
     HidLog? log,
+    this.connectRetryDelay = const Duration(seconds: 2),
   }) : log = log ?? HidLog();
 
   static const int _latencySampleCapacity = 128;
@@ -52,6 +53,10 @@ class HidBridge {
   final Ds4ReportPacker _packer = Ds4ReportPacker();
   final List<double> _latencySamples = [];
   StreamSubscription<Map<Object?, Object?>>? _eventSubscription;
+
+  /// Delay between device-initiated connect attempts (injectable for tests).
+  final Duration connectRetryDelay;
+  static const int _maxHostConnectAttempts = 3;
 
   HidState _state = HidState.uninitialized;
 
@@ -97,6 +102,7 @@ class HidBridge {
   }
 
   Future<void> dispose() async {
+    _hostConnectTimer?.cancel();
     await _eventSubscription?.cancel();
     _eventSubscription = null;
   }
@@ -120,12 +126,7 @@ class HidBridge {
   /// platform channel (touch → report handed to the BT stack), which is the
   /// phone-attributable portion of the <10 ms budget (spec R9).
   Future<bool> sendState(Ds4ReportState state) async {
-    if (_state == HidState.uninitialized ||
-        _state == HidState.unregistered ||
-        _state == HidState.registering ||
-        _state == HidState.error) {
-      return false;
-    }
+    if (!_state.isLinked) return false;
     if (hostAddress == null) return false;
 
     // Fresh buffer per send: the packer reuses its scratch, but a second
@@ -262,6 +263,8 @@ class HidBridge {
         // Force a fresh report on (re)connect — the host's cached state is
         // whatever it last saw; a real DS4 sends a full report here.
         _packer.invalidateLastSent();
+        _hostConnectAttempts = 0;
+        _hostConnectTimer?.cancel();
         _transition(HidState.connected, 'host connected: ${name ?? address}');
       case 'connecting':
         log.state('host connecting: ${name ?? address}');
@@ -270,10 +273,33 @@ class HidBridge {
         if (_state.isLinked) {
           _transition(HidState.registered, 'host disconnected — waiting for reconnect');
           _connectKnownHost();
+        } else if (hostAddress != null && platformState == 'disconnected') {
+          // The host's connect attempt failed before we were ever linked
+          // (Windows pairs, shows connected, then drops). A device-initiated
+          // connect goes through the stack's own path and recovers the common
+          // first-attempt failure — bounded so a dead host cannot loop us.
+          _scheduleHostConnect();
         }
       default:
         log.state('connection state: $platformState');
     }
+  }
+
+  int _hostConnectAttempts = 0;
+  Timer? _hostConnectTimer;
+
+  /// Bounded device-initiated connect attempts after a failed host attempt.
+  void _scheduleHostConnect() {
+    if (_hostConnectAttempts >= _maxHostConnectAttempts) {
+      log.state('host connect keeps failing — stopped auto-retrying');
+      return;
+    }
+    _hostConnectAttempts += 1;
+    _hostConnectTimer?.cancel();
+    _hostConnectTimer = Timer(connectRetryDelay, () {
+      log.state('device-initiated connect attempt $_hostConnectAttempts/$_maxHostConnectAttempts');
+      _connectKnownHost();
+    });
   }
 
   void _onHostRequest(Map<Object?, Object?> event) {

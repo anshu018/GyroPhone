@@ -248,6 +248,45 @@ void main() {
       expect(bridge.state, HidState.streaming, reason: 're-registration while linked must not lie');
     });
 
+    test('failed host connect triggers bounded device-initiated retries', () async {
+      await startAndRegister();
+      bridge.handlePlatformEvent({
+        'event': 'connectionState',
+        'address': 'AA:BB:CC:DD:EE:FF',
+        'name': 'PC',
+        'state': 'disconnected',
+      });
+      await pump();
+      expect(plugin.count('connect'), 0, reason: 'retry is delayed, not immediate');
+      await Future<void>.delayed(bridge.connectRetryDelay);
+      expect(plugin.count('connect'), 1, reason: 'one device-initiated attempt after the delay');
+
+      // Bounded: further failed host attempts must not retry forever.
+      for (var i = 0; i < 3; i++) {
+        bridge.handlePlatformEvent({
+          'event': 'connectionState',
+          'address': 'AA:BB:CC:DD:EE:FF',
+          'name': 'PC',
+          'state': 'disconnected',
+        });
+        await Future<void>.delayed(bridge.connectRetryDelay);
+      }
+      expect(plugin.count('connect'), 3, reason: '3 bounded attempts, then give up');
+    });
+
+    test('sendState while merely registered sends nothing', () async {
+      await startAndRegister();
+      bridge.handlePlatformEvent({
+        'event': 'connectionState',
+        'address': 'AA:BB:CC:DD:EE:FF',
+        'name': 'PC',
+        'state': 'disconnected',
+      });
+      await pump();
+      expect(await bridge.sendState(Ds4ReportState.neutral), isFalse);
+      expect(plugin.count('sendReport'), 0, reason: 'no reports before the profile is linked');
+    });
+
     test('host requests are logged, not lost', () async {
       bridge.handlePlatformEvent({
         'event': 'hostRequest',
@@ -273,4 +312,5 @@ HidBridge _makeBridge(FakePlugin plugin) => HidBridge(
       invoke: plugin.call,
       eventStream: () => const Stream<Map<Object?, Object?>>.empty(),
       log: HidLog(),
+      connectRetryDelay: const Duration(milliseconds: 50),
     );
