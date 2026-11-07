@@ -1,6 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Bluetooth HID device role (docs/specs/M1-pair-as-ds4.md R2).
+         BLUETOOTH_CONNECT is requested at runtime before registerApp; the
+         legacy permissions cover Android 9-11 only. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
     <application
-        android:label="gyrophone"
+        android:label="GyroPhone"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -11,6 +18,7 @@
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
+            android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustResize">
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user

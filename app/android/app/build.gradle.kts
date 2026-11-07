@@ -44,6 +44,11 @@ kotlin {
     }
 }
 
+dependencies {
+    // JVM unit tests only (Ds4DescriptorTest) — never linked into the APK.
+    testImplementation("junit:junit:4.13.2")
+}
+
 flutter {
     source = "../.."
 }

@@ -16,7 +16,7 @@ flowchart LR
     H -- platform channel --> K["HidPlugin.kt<br/>report packer, descriptor,<br/>BluetoothHidDevice"]
   end
   K -- "input report 0x11<br/>(sticks, buttons, gyro)" --> PC["PC (unmodified)<br/>Steam Input → games"]
-  PC -- "output report 0x05<br/>(rumble motors)" --> K
+  PC -- "output report 0x11<br/>(rumble motors)" --> K
   K -- rumble bytes --> HP["haptics/<br/>HapticEngine → Vibrator"]
 ```
 
@@ -48,7 +48,9 @@ flowchart LR
 The emulated controller must behave like a real DualShock 4 or Steam and games will misread it. The binding rules:
 
 - **Input report `0x11`** (the 78-byte full report) carries: left/right stick bytes (unsigned, centered at 128), button/trigger bit fields, the 6-axis motion block (accelerometer XYZ, gyroscope XYZ — signed 16-bit little-endian), a timestamp, and the battery nibble. The report descriptor declaring this map is the community-documented DS4 descriptor; the full byte layout is specified in the M1 spec (`docs/specs/`) and in code comments, not duplicated here.
-- **Output report `0x05`** (11 bytes) carries the two rumble motor intensities set by the game. `HidPlugin.kt` receives it via the `onOutputReport` callback and forwards it to the `HapticEngine`.
+- **Report-mode behavior:** a real DS4 sends the small input report `0x01` (10 bytes, standard gamepad usages) until the host reads feature `0x02` (calibration), then switches to `0x11`. The app replicates this exactly: `0x01` feeds Windows' in-box HID stack (which parses only the standard usages), the `0x11` switch feeds a Steam DS4 path.
+- **Output report `0x11`** (78 bytes over Bluetooth) carries the two rumble motor intensities set by the game. `0x05` is the USB descriptor's output report — it does not exist on the Bluetooth path. `HidPlugin.kt` receives output reports via the `onInterruptData` callback (interrupt channel) or `onSetReport` (control channel) and forwards them to the `HapticEngine`.
+- **Host identity limit:** the phone advertises its own USB VID/PID in the SDP Device-ID record (apps cannot set Sony's `054C:05C4`). Windows is unaffected; whether Steam classifies the device as a DS4 is measured in M1 and recorded in the spec's open questions — if it does not, M2's gyro path needs a user decision (see [RESEARCH.md](RESEARCH.md)).
 - **Motion block semantics:** gyro values are angular rates; the app integrates them (with the fused rotation vector as drift correction) into the wheel angle. Sticks and buttons map 1:1 from `WheelModel` and layout state.
 - **Battery nibble** reports the phone's battery — Steam then shows something truthful.
 - **Report rate:** send at the sensor rate, capped at ~120 Hz as the starting target; adjust after M1 measures real behavior. Never batch or skip frames to save work — stale motion reads as lag.
@@ -99,8 +101,8 @@ Break any of these and the product degrades in ways users feel:
 | Symptom | First suspect |
 |---------|---------------|
 | PC doesn't see the gamepad | `HidPlugin.kt` — SDP record, registration, bonding flow |
-| Gamepad visible, buttons/sticks dead | report descriptor mismatch or report packing |
-| Steam sees no gyro | motion region bytes, endianness, timestamp; then Steam Input mapping guide |
+| Gamepad visible, buttons/sticks dead | report descriptor mismatch, report packing, or `0x11`-vs-`0x01` report mode |
+| Steam sees no gyro | VID/PID classification first (host identity limit), then motion region bytes, endianness, timestamp |
 | Steering drifts or feels wrong | `sensors/` — fusion, bias, axis choice |
 | Rotation range ≠ configured | `WheelModel` mapping and clamping |
 | Phone doesn't vibrate from games | `onOutputReport` reception → `HapticEngine` |

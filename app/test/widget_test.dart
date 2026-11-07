@@ -1,30 +1,35 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:gyrophone/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('status screen renders with the pairing guide', (WidgetTester tester) async {
+    TestWidgetsFlutterBinding.ensureInitialized();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // Answer the platform channel so start() completes deterministically;
+    // no appStatus event arrives in tests, so the state stays "registering".
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('gyrophone/hid'),
+      (call) async {
+        switch (call.method) {
+          case 'ensurePermissions':
+          case 'register':
+          case 'connect':
+          case 'sendReport':
+            return true;
+          case 'getHosts':
+            return <Map<String, Object?>>[];
+        }
+        return null;
+      },
+    );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    await tester.pumpWidget(const GyroPhoneApp());
+    await tester.pumpAndSettle();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Pair from the PC:'), findsOneWidget);
+    expect(find.text('Enable controller mode'), findsOneWidget);
+    expect(find.text('not connected to a PC'), findsOneWidget);
   });
 }
