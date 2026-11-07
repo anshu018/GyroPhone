@@ -29,13 +29,13 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 
 ## Next, in order
 
-1. **Ver-1 Step 2 (DS4 hardening)**: extend the M1 spec / write the Step 2 spec — first task: Steam → click the controller entry → record DS4 vs Generic classification (feeds the M2 gyro decision, [spec open question 1](docs/specs/M1-pair-as-ds4.md))
+1. **Ver-1 Step 2 (DS4 hardening)**: write its spec — **opening with the M2 gyro architecture decision**: Steam classifies the device as Generic (answered, see spec open question 1), so the original "Steam sees DS4 gyro" path needs either the full-descriptor retry experiment, a DSU/cemuhook route, or a revised ADR-001 — the user decides on evidence
 2. Phone-side connect UI for bonded hosts (spec task 11, user-approved)
 3. Then Steps 3+ per [Ver-1.md](Ver-1.md); milestone acceptance criteria in [docs/ROADMAP.md](docs/ROADMAP.md) remain the definition of done
 
 ## Open questions
 
-- Steam classification of a non-Sony-DID device — evidence so far is promising (Sony-name entries, PlayStation-style wizard prompts); the click-through verdict lands in Step 2 and shapes the M2 gyro path ([spec open question 1](docs/specs/M1-pair-as-ds4.md))
+- ~~Steam classification~~ **ANSWERED 2026-11-08: Generic Gamepad** (evidence chain in [spec open question 1](docs/specs/M1-pair-as-ds4.md)). M2 gyro path decision is now the user's.
 - Whether the full-DS4-descriptor install failure is OxygenOS-16-specific or Windows-26H2-wide (Nothing Phone 1 also runs the small descriptor — a full-descriptor retry on it is a cheap Step 2 experiment)
 
 ## Gotchas for next session
