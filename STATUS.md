@@ -29,14 +29,16 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 
 ## Next, in order
 
-1. **Ver-1 Step 2 (DS4 hardening)**: write its spec — **opening with the M2 gyro architecture decision**: Steam classifies the device as Generic (answered, see spec open question 1), so the original "Steam sees DS4 gyro" path needs either the full-descriptor retry experiment, a DSU/cemuhook route, or a revised ADR-001 — the user decides on evidence
-2. Phone-side connect UI for bonded hosts (spec task 11, user-approved)
-3. Then Steps 3+ per [Ver-1.md](Ver-1.md); milestone acceptance criteria in [docs/ROADMAP.md](docs/ROADMAP.md) remain the definition of done
+1. **Option A experiment (30 min, cheap):** full 356-byte DS4 descriptor on the Nothing Phone 1 — does it install? Does Steam reclassify? Data either way; do NOT build on it.
+2. **Write the M2 spec (`docs/specs/M2-wheel.md`)** with the corrected architecture: the wheel does NOT depend on Steam classification — phone-side sensor fusion (rotation vector + gyro → wheel angle) is sent as a plain steering AXIS in report 0x01, which racing games (BeamNG, Assetto Corsa) bind natively like any DirectInput wheel. Steam-Input gyro / DS4 classification only affects the *extras* (universal gyro mapping, M3 rumble) — those stay on the decision menu.
+3. Get M2 spec approved → implement (sensor pipeline, wheel model, wheel layout).
+4. Phone-side connect UI for bonded hosts (spec task 11, user-approved).
+5. Rumble (M3) decision deferred until Option A's data exists.
 
 ## Open questions
 
-- ~~Steam classification~~ **ANSWERED 2026-11-08: Generic Gamepad** (evidence chain in [spec open question 1](docs/specs/M1-pair-as-ds4.md)). M2 gyro path decision is now the user's.
-- Whether the full-DS4-descriptor install failure is OxygenOS-16-specific or Windows-26H2-wide (Nothing Phone 1 also runs the small descriptor — a full-descriptor retry on it is a cheap Step 2 experiment)
+- ~~Steam classification~~ **ANSWERED 2026-11-08: Generic Gamepad** (evidence chain in [spec open question 1](docs/specs/M1-pair-as-ds4.md)). Consequence limited to the extras — the M2 wheel works via the axis path regardless (see Next item 2).
+- Whether the full-DS4-descriptor install failure is OxygenOS-16-specific or Windows-26H2-wide (Nothing Phone 1 also runs the small descriptor — a full-descriptor retry on it is the Option A experiment above)
 
 ## Gotchas for next session
 
