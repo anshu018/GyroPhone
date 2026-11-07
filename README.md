@@ -29,6 +29,7 @@ Current status in one line: **documentation complete; Phase 0 / milestone M1 ("p
 | [docs/VISION.md](docs/VISION.md) | You want the why | Product thesis, audiences, pillars, non-goals, success criteria |
 | [docs/RESEARCH.md](docs/RESEARCH.md) | You need facts | Dated, sourced competitor map, market, open-source vetting, feasibility |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | You build or review | Modules, contracts, data flows, invariants, performance budgets |
+| [Ver-1.md](Ver-1.md) | You build V1 | Step-by-step execution plan + live tracker (steps 0–9, pitfalls per step) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | You plan or execute | Milestones M1–M3, phases 1–4, acceptance criteria |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | You ask "why X?" | Eight immutable decision records |
 | [docs/UIUX.md](docs/UIUX.md) | You work on the UI | Fixed constraints and open design decisions (design pass pending) |
@@ -45,6 +46,7 @@ GyroPad/
 ├── AGENTS.md            agent entry point and session protocol
 ├── PERSONA.md           the engineer's craft standard (thinking, code, tests, research)
 ├── CONVENTIONS.md       code rules and the never-do list
+├── Ver-1.md             V1 execution plan + step tracker
 ├── docs/
 │   ├── VISION.md        product thesis and non-goals
 │   ├── RESEARCH.md      sourced research dossier

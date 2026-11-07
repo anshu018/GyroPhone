@@ -12,7 +12,7 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 
 - Research (2026-11-07): competitor map, market, open-source vetting, feasibility, economics — all sourced in [docs/RESEARCH.md](docs/RESEARCH.md)
 - Eleven decisions locked in [docs/DECISIONS.md](docs/DECISIONS.md) (incl. Bluetooth HID transport, stack, sequence, OpenBot base, documentation system, agent persona, provisional brand, data-driven layouts)
-- Complete documentation set — 11 files, written file-by-file, style per [CONVENTIONS.md](CONVENTIONS.md); persona in [PERSONA.md](PERSONA.md) ([ADR-009](docs/DECISIONS.md))
+- Complete documentation set — 12 files (incl. **Ver-1.md**, the V1 execution plan + step tracker), written file-by-file, style per [CONVENTIONS.md](CONVENTIONS.md); persona in [PERSONA.md](PERSONA.md) ([ADR-009](docs/DECISIONS.md))
 - **Development environment set up (2026-11-07):** Flutter 3.47.9 stable installed at `C:\Users\ash74\dev\flutter` (in user PATH); Android cmdline-tools installed into the existing SDK (36.1.0); licenses accepted; `flutter doctor` fully green
 - **GitHub repo connected (2026-11-07):** private repo [github.com/anshu018/GyroPhone](https://github.com/anshu018/GyroPhone), branch `main`, `.gitignore` in place (secrets patterns per CONVENTIONS never-do #3), initial commit pushed
 - Test devices identified: primary **OnePlus Nord 5** (OxygenOS 15 / Android 15), secondary **Nothing Phone 1** (Android 13+) — both satisfy the Android 9 (API 28)+ requirement for `BluetoothHidDevice`; exact builds verified on-device during M1
@@ -25,8 +25,8 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 ## Next, in order
 
 1. Write the M1 spec (`docs/specs/M1-pair-as-ds4.md`): goal, requirements, acceptance criteria, task list — get user approval
-2. Scaffold the Flutter app in `app/` (`flutter create --org` …), add `.gitattributes` (LF policy), wire the Kotlin plugin skeleton
-3. Implement M1 per spec ([docs/ROADMAP.md](docs/ROADMAP.md) for scope and acceptance criteria)
+2. Execute **Step 0 (scaffold)** and **Step 1 (HID spike)** per [Ver-1.md](Ver-1.md), ticking statuses there as work completes
+3. Continue down the Ver-1 steps; milestone acceptance criteria in [docs/ROADMAP.md](docs/ROADMAP.md) remain the definition of done
 
 ## Open questions
 

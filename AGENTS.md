@@ -11,12 +11,13 @@ GyroPad turns a phone into a cockpit controller. Tier 1 (current): an Android ap
 1. [STATUS.md](STATUS.md) — where we are: current goal, done, next, blockers, gotchas
 2. [PERSONA.md](PERSONA.md) — who you are while you work: the standard of thinking, code, tests, and research
 3. The current milestone spec in `docs/specs/` — the task, if one exists
-4. [docs/ROADMAP.md](docs/ROADMAP.md) — milestone scope, acceptance criteria, out-of-scope lists
-5. [CONVENTIONS.md](CONVENTIONS.md) — code rules and the never-do list (**binding**)
-6. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — modules, contracts, invariants, performance budgets
-7. [docs/DECISIONS.md](docs/DECISIONS.md) — why things are the way they are (immutable log)
-8. [docs/UIUX.md](docs/UIUX.md) — only for UI work (design pass pending; interim rules apply)
-9. [docs/RESEARCH.md](docs/RESEARCH.md) — when a claim needs a source or a fact needs checking
+4. [Ver-1.md](Ver-1.md) — the V1 execution plan: your step's full detail, tasks, and pitfalls
+5. [docs/ROADMAP.md](docs/ROADMAP.md) — milestone scope, acceptance criteria, out-of-scope lists
+6. [CONVENTIONS.md](CONVENTIONS.md) — code rules and the never-do list (**binding**)
+7. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — modules, contracts, invariants, performance budgets
+8. [docs/DECISIONS.md](docs/DECISIONS.md) — why things are the way they are (immutable log)
+9. [docs/UIUX.md](docs/UIUX.md) — only for UI work (design pass pending; interim rules apply)
+10. [docs/RESEARCH.md](docs/RESEARCH.md) — when a claim needs a source or a fact needs checking
 
 ## Session protocol
 
@@ -34,6 +35,7 @@ GyroPad turns a phone into a cockpit controller. Tier 1 (current): an Android ap
 | Event | Action |
 |-------|--------|
 | Session end **or** milestone completed | Update [STATUS.md](STATUS.md) |
+| A V1 step starts, progresses, or completes | Update its status + checkboxes in [Ver-1.md](Ver-1.md) in the same change |
 | A mistake or trap discovered while working | Record it **in the same session** in the current spec's *Pitfalls* section ([docs/specs/](docs/specs/README.md)); generalizable rules escalate to [CONVENTIONS.md](CONVENTIONS.md) → never-do list |
 | Writing or rewriting any doc | Follow *Documentation style* in [CONVENTIONS.md](CONVENTIONS.md) |
 | Architecture, library, or platform choice | New numbered ADR in [docs/DECISIONS.md](docs/DECISIONS.md) — never edit an accepted one |
