@@ -21,23 +21,23 @@ Dependency chain: **M1 → M2 → M3 → Phase 1 → Phase 2 → Phase 3 → Pha
 
 Target: a stranger installs nothing on their PC, pairs their phone, and drives a Steam racing game with gyro and rumble inside five minutes.
 
-### M1 — "Hello, gamepad": phone pairs as a DS4 — not started
+### M1 — "Hello, gamepad": phone pairs as a DS4 — in progress (transport proven)
 
 **Goal.** Prove the transport on real devices. This is the spike that decides whether the plan holds.
 
-**Spec:** `docs/specs/M1-pair-as-ds4.md` (to be written first).
+**Spec:** `docs/specs/M1-pair-as-ds4.md`.
 
 **In scope:** Kotlin `BluetoothHidDevice` plugin (SDP app record, DS4 report descriptor, register/connect flow); input-report packing for buttons and sticks; minimal temporary status screen (per [UIUX.md](UIUX.md) interim rule); connection state machine with disconnect/reconnect handling; input-path latency measurement.
 
 **Out of scope:** gyro and sensor fusion, wheel layout, haptics, settings, anything about cars.
 
 **Acceptance criteria:**
-- [ ] M1 spec written and approved
-- [ ] Phone registers as a DualShock 4; PC pairs from Bluetooth settings
-- [ ] Buttons and sticks visible and responsive in a Windows gamepad tester
-- [ ] Works on the user's device and at least one other (OEM quirk check)
-- [ ] State machine survives disconnect/reconnect without app restart
-- [ ] Input-path latency measured and recorded against the budget in [ARCHITECTURE.md](ARCHITECTURE.md)
+- [x] M1 spec written and approved
+- [x] Phone registers as a DualShock 4; PC pairs from Bluetooth settings (2026-11-08, Nord 5; DS4 SDP identity + small-report descriptor — see the spec's R4/Pitfalls for the documented deviation)
+- [x] Buttons and sticks visible and responsive in a Windows gamepad tester (2026-11-08, joy.cpl, user-confirmed)
+- [ ] Works on the user's device and at least one other (Nord 5 ✓; Nothing Phone 1 pending)
+- [x] State machine survives disconnect/reconnect without app restart (demonstrated live: BT toggles, app restarts, re-pair cycles — auto re-register + device-initiated reconnect)
+- [ ] Input-path latency measured and recorded against the budget in [ARCHITECTURE.md](ARCHITECTURE.md) (instrumented; readout pending)
 
 **Exit:** a working pairing demo on the user's PC; measurements logged.
 

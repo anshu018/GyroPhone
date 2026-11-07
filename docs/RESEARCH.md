@@ -149,6 +149,22 @@ Researched while writing the [M1 spec](specs/M1-pair-as-ds4.md); byte maps live 
 
 **⚠ VID/PID limitation and its product consequence (Assessed, to be measured in M1).** A real DS4 advertises Sony VID/PID `054C:05C4` via a separate SDP Device-ID record (visible in the PSDevWiki dump). Android's public API offers no way to set that record — prior art states it plainly ("identifies controllers by USB vendor/product ID, which Android apps can't publish"). Steam/SDL classifies DS4 controllers by VID/PID (Sony's plus licensed third parties). Expected result on our hardware: Windows sees a working gamepad (its tester is VID/PID-agnostic) while **Steam labels the device "Generic Gamepad" — which would block the M2 gyro and M3 rumble paths as currently designed**. M1's device test captures the ground truth (Device Manager hardware IDs, Steam → Controller settings); the architecture decision after that data is the user's, on evidence.
 
+### On-device transport findings — Nord 5 (2026-11-08, M1 device test)
+
+Measured on: OnePlus Nord 5 (CPH2707, OxygenOS, Android 16 / API 36) ↔ Windows 11 26H2. HID device profile present (`bluetooth.profile.hid.device.enabled=true`).
+
+**Control experiment (Verified — our own measurement).** The prior-art app [blugaemand](https://github.com/pablopenna/blugaemand) (Android `registerApp` gamepad) paired cleanly, connected, and streamed on this exact hardware pair — proving the platform transport works and isolating any failure to our own registration payload. Its on-screen latency telemetry read 4.58/6.95/8.59 ms (median/p95/worst) for the send path on this hardware — our <10 ms budget is realistic (Reported — its own log line).
+
+**License fact (Verified).** blugaemand ships **no license file** — all rights reserved. Its code may not be copied into GyroPad (CONVENTIONS.md license rule; ADR-007 proprietary default). Used strictly as a source of platform facts, cited here.
+
+**blugaemand registration facts (Verified against its source, read-only).** SDP subclass **0x08** — deliberately *not* Android's `SUBCLASS2_GAMEPAD` (0x02); 93-byte minimal descriptor (report ID 1 only: 4 axes, 2 simulation-page triggers, 4-bit hat, 16 buttons); 9-byte input reports; no QoS parameters; device enumerates as **DirectInput, never XInput** on Windows; the Bluetooth stack appends one `0x00` to the descriptor in transit regardless of length. Source: [GenericHidProfile.kt](https://raw.githubusercontent.com/pablopenna/blugaemand/main/app/src/main/java/com/blugaemand/hid/GenericHidProfile.kt).
+
+**Foreground-pairing requirement (Reported — our measurement, one device).** With the app registered but backgrounded, fresh pairings never completed the HID connection (Windows: "Driver error" or no HID service). With the app foreground (its own discoverable request), pairing completed. Our app now uses `ACTION_REQUEST_DISCOVERABLE` for exactly this.
+
+**Descriptor-size finding (Reported — our measurement, one device pair).** From-scratch pairing with the full 356-byte DS4 BT descriptor never produced a HID device on this stack+Windows pair, while a minimal small-report descriptor did. M1 ships the DS4's own report-0x01 section (79 bytes) as a standalone descriptor; the full descriptor is retained for Step 2. Whether this is an OxygenOS 16 stack quirk or a Windows-26H2 driver behavior is **open** — the second-device test (Nothing Phone 1) and Step 2 revisit it.
+
+**Windows name cache (Reported).** Windows reuses a paired device's friendly controller name across remove/re-pair cycles; a controller can keep a stale name after re-pairing. Cosmetic — mappings and function follow the current SDP record.
+
 ## Keeping this current
 
 - Every status claim carries its date. When a fact is re-verified later, update the date and the source; when a fact is superseded, **remove it** rather than annotating it.

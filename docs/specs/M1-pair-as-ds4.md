@@ -42,7 +42,12 @@ The phone's Class of Device stays "Phone" (apps cannot change it; prior art conf
 
 ### R4 — Report descriptor (byte-exact)
 
-The DS4 **Bluetooth** report descriptor, 356 bytes, transcribed from the SDP dump of real hardware. This is the USB descriptor's sibling, not the USB descriptor itself (the USB one is 467 bytes and declares output `0x05`; the BT one declares input+output `0x11`). Transcribed verbatim into `Ds4Descriptors.kt` with the source in the comment; never edited by hand.
+Two byte-exact descriptors live in `Ds4Descriptors.kt`, both transcribed from the SDP dump of real hardware ([References](#references)):
+
+1. **The full DS4 Bluetooth descriptor — 356 bytes** (the file's `DESCRIPTOR_HEX`). Kept for Step 2; declared below verbatim so the transcription is always reviewable. Never edited by hand.
+2. **The small-report descriptor — 79 bytes** (the DS4 descriptor's own report-0x01 section plus End Collection). **This is what M1 registers**, for a reason discovered on-device: the full descriptor never installed on the M1 test hardware (OxygenOS 16 ↔ Windows 26H2 — every from-scratch pairing failed to produce a HID device), while a minimal small-report descriptor paired cleanly on identical hardware (control experiment; see Pitfalls and [RESEARCH.md](../RESEARCH.md)). M1 sends only report `0x01`, so the small descriptor is wire-faithful for everything M1 does. `btReportDescriptorSmall` is asserted to be the full descriptor's prefix plus End Collection by the Kotlin test suite.
+
+The full descriptor, verbatim:
 
 ```
 05 01 09 05 A1 01 85 01 09 30 09 31 09 32 09 35
@@ -77,7 +82,7 @@ What it declares: a Generic Desktop / Game Pad application collection containing
 - Vendor page `0xFF00`, **input report `0x11` and output report `0x11`, 77-byte payloads each** (78 bytes with the report ID) — the full DS4 report.
 - Audio report variants `0x12`–`0x19` (input+output, larger payloads).
 
-Unit test asserts: length == 356, first bytes `05 01 09 05`, last bytes `B1 02 C0`, anchor byte runs. The real gate is the device test (byte-faithfulness rule).
+Unit tests assert: full descriptor length == 356 with head/tail anchors; small descriptor length == 79 and byte-identical to the full descriptor's report-0x01 section plus End Collection. The real gate is the device test (byte-faithfulness rule) — which passed on 2026-11-08: sticks and buttons mapped correctly in `joy.cpl` with the small descriptor live.
 
 ### R5 — Input reports (M1 sends `0x01`)
 
@@ -156,19 +161,22 @@ Mirrors [ROADMAP.md](../ROADMAP.md) M1; a box is ticked only after the criterion
 
 ## Pitfalls (do not)
 
-Pre-filled from [Ver-1.md](../../Ver-1.md) and the 2026-11-07 research; appended in-session whenever a trap is discovered.
+Pre-filled from [Ver-1.md](../../Ver-1.md) and the 2026-11-07 research; appended in-session during the 2026-11-08 device test.
 
 - Do not write or "improve" the descriptor from memory — transcribe from the pinned dump, assert 356 bytes, and expect one harmless `0x00` appended in transit (Linux dmesg logs "unknown main item tag 0x0"; prior-art-confirmed, benign).
 - Do not request `BLUETOOTH_CONNECT` lazily — grant before `registerApp` or registration fails silently on Android 12+.
 - Do not assume the report ID rides inside `data`: `sendReport(device, id, data)` takes the ID separately, and `onInterruptData`/`onSetReport` deliver it separately — prepending it twice corrupts every report (verified in AOSP JNI source).
-- Do not pair before registering: hosts cache the SDP record at pair time. A phone already paired as a phone must be removed and re-paired. Any descriptor/SDP change requires re-pairing both ends.
+- **Do not re-pair over a stale bond.** Windows caches a device's controller definition at *pair* time. Changed SDP/descriptor + old bond = "Driver error", wrong button mappings, or a controller that connects and drops within seconds. Always remove on **both** ends and re-pair fresh. (Cost us five pairing cycles on 2026-11-08.)
+- **The registered app must be foreground during pairing** (observed on OxygenOS 16): a backgrounded app's registration survives, but the stack refuses to complete the HID connection to it — Windows shows "Driver error" or no HID service at all. The app therefore makes itself discoverable via `ACTION_REQUEST_DISCOVERABLE` (system dialog over our activity) instead of sending the user to Bluetooth settings. Never route the pairing flow through another app's screen.
+- **The full 356-byte DS4 BT descriptor never installed on this stack+Windows pair** (OxygenOS 16, Nord 5, Android 16 ↔ Windows 26H2): every from-scratch pairing with it failed to produce a HID device, while a minimal small-report descriptor paired cleanly on identical hardware (control experiment). M1 therefore registers the DS4's own report-0x01 section as a standalone 79-byte descriptor — byte-identical to the real DS4's small report — and keeps the full descriptor for Step 2, to be revisited with a working baseline and a second device.
+- Do not "fix" the subclass to Android's `SUBCLASS2_GAMEPAD` (0x02): the DS4 byte (0x08) is exonerated — the control app pairs cleanly with 0x08 on the same hardware. Tested on-device 2026-11-08.
+- Only one app can hold the HID registration, and force-stopping the holder does not reliably release it (`registerApp(): failed because another app is registered`) — a Bluetooth toggle resets the service and is also the cure for the stack's `Unknown device` bookkeeping after app restarts.
+- `sendReport` to a merely-registered (not connected) host is rejected by the stack — the Dart bridge only sends in a linked state and invalidates its dedupe on any failed send, so hosts never hold stuck inputs.
+- Windows reuses a paired device's friendly name across re-pairs (cosmetic): the controller can keep a stale name after re-pairing; a genuinely fresh PC shows the correct one. Function is the evidence, not the label.
+- `adb logcat` tag filtering flakes on this machine (empty output via `ANDROID_LOG_TAGS`); use `adb shell "logcat -d | grep …"` instead.
 - Do not treat `registerApp`'s boolean as success — track `onAppStatusChanged`; the OS auto-unregisters backgrounded apps and on BT off.
 - Do not send `0x11` reports to Windows in M1 — its in-box stack parses only the standard usages of `0x01`; `0x11` reads as vendor-opaque bytes and the tester shows nothing.
-- Do not pass Android's `SUBCLASS2_GAMEPAD` (0x02) — the DS4's own SDP record says subclass `0x08`.
 - Do not run BT work on the UI thread; callbacks go to a dedicated executor; state transitions go to the logger, not toasts; report bytes are never logged.
-- Do not "fix" Java 22 via the system JDK — pin per-project only.
-- Do not rename the package after scaffolding — decide now (done: applicationId `com.gyrophone.app`, see R1).
-- Do not commit `local.properties`, keystores, or `.gradle/` — root `.gitignore` covers them; verify before the first app commit.
 - Do not test on an emulator — `BluetoothHidDevice` needs real Bluetooth hardware (Nord 5 primary, Nothing Phone 1 secondary).
 - Do not chase the Class of Device — it stays "Phone" by platform design; the SDP record is what hosts read.
 - Do not expect Steam to call this a DS4 — see Open questions; record what it says instead of fighting it in M1.

@@ -65,18 +65,18 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 
 ## Step 1 — HID transport spike (phone pairs as DS4)
 
-**Status: IN PROGRESS** (code + unit tests green 2026-11-07; device tests pending) · Milestone: M1 · Depends on: 0
+**Status: IN PROGRESS** (transport proven on Nord 5, 2026-11-08; latency readout + Steam verdict + Nothing Phone 1 remaining) · Milestone: M1 · Depends on: 0
 
 **Goal:** prove the kill-switch assumption — a phone can pose as a DualShock 4 on the PC, with buttons and sticks working.
 
 **Tasks:**
 - [x] Write the M1 spec first: `docs/specs/M1-pair-as-ds4.md` (goal, requirements, byte maps, acceptance criteria, task list, pitfalls) — user approval before code
-- [x] `HidPlugin.kt`: request `BLUETOOTH_CONNECT` runtime permission (API 31+), then `BluetoothHidDevice.registerApp` with a DS4 SDP app record + the community-documented DS4 report descriptor (byte-exact — do not write the descriptor from memory)
-- [x] Connection state machine (Dart `HidBridge`): unpaired → registered → connected → streaming → error, with transitions logged
+- [x] `HidPlugin.kt`: request `BLUETOOTH_CONNECT` runtime permission (API 31+), then `BluetoothHidDevice.registerApp` with a DS4 SDP app record + the community-documented DS4 report descriptor (byte-exact — do not write the descriptor from memory) — descriptor facts: the full 356-byte DS4 descriptor is kept for Step 2; M1 registers the DS4's own 79-byte small-report descriptor (device-test finding, see spec R4/Pitfalls)
+- [x] Connection state machine (Dart `HidBridge`): unpaired → registered → connected → streaming → error, with transitions logged — plus device-initiated bounded reconnect and in-app discoverable request (device findings)
 - [x] Input-report packing: sticks (unsigned bytes, center 128) + buttons (bit fields) — **into report `0x01` for M1, not `0x11`** (spec R5: Windows' in-box stack parses only `0x01`'s standard usages; the `0x11` switch happens in Step 2, faithful to real-DS4 calibration-triggered behavior)
 - [x] Minimal temporary status screen (per [docs/UIUX.md](docs/UIUX.md) interim rule): BT state, device name, guide to pair from PC
-- [ ] Test on Nord 5 + Nothing Phone 1; verify in a Windows gamepad tester (joy.cpl and/or gamepad-tester.com) via Steam-off first, then Steam
-- [ ] Measure input-path latency against the <10 ms budget ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)); record numbers in the spec
+- [ ] Test on Nord 5 + Nothing Phone 1; verify in a Windows gamepad tester (joy.cpl and/or gamepad-tester.com) via Steam-off first, then Steam — **Nord 5 done 2026-11-08: pairs, connects, sticks+buttons correct in joy.cpl, Steam lists the controller**; Nothing Phone 1 pending
+- [ ] Measure input-path latency against the <10 ms budget ([docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)); record numbers in the spec — instrumented (128-sample rolling window); readout pending
 
 **Exit when:** ROADMAP M1 acceptance criteria all pass (two devices, tester-visible inputs, reconnect survives, latency recorded).
 
@@ -261,3 +261,4 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 | 2026-11-07 | M1 spec written and approved (`docs/specs/M1-pair-as-ds4.md`); transport research recorded in RESEARCH.md |
 | 2026-11-07 | Step 0 scaffold: app/ created (com.gyrophone.app, minSdk 28), analyze/test green; device install pending |
 | 2026-11-07 | Step 1 spike implemented: DS4 SDP + byte-exact 356-byte BT descriptor (independently verified), HidPlugin.kt, Dart state machine + 0x01 packer + status screen; analyze zero findings, 23/23 Dart tests, 6/6 Kotlin descriptor tests, APK builds; NDK 28.2 installed; device tests next |
+| 2026-11-08 | Device test on Nord 5 (Android 16): control experiment (blugaemand) proved the platform; our app's payload iterated to working state — in-app discoverable request + DS4 small-report descriptor (79 B) + device-initiated reconnect; **transport proven: pairs, connects, sticks+buttons correct in joy.cpl, Steam lists the controller**. Findings recorded in spec Pitfalls + RESEARCH.md; latency readout, Steam verdict, and Nothing Phone 1 test remain |
