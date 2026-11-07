@@ -1,0 +1,37 @@
+# ===== Flutter / Dart =====
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+coverage/
+pubspec.lock
+
+# ===== Android / Gradle =====
+**/android/.gradle/
+**/android/local.properties
+**/android/key.properties
+*.jks
+*.keystore
+**/android/app/.cxx/
+
+# ===== IDE =====
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Secrets & local config (CONVENTIONS.md never-do #3: never commit) =====
+.env
+.env.*
+*.env
+secrets/
+**/secrets/
+credentials.json
