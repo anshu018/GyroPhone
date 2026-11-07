@@ -67,7 +67,7 @@ Target: a stranger installs nothing on their PC, pairs their phone, and drives a
 
 **Spec:** `docs/specs/M3-feel.md`.
 
-**In scope:** gamepad layout; settings screen (rotation range, sensitivity, deadzones, haptics on/off/intensity, steering-axis choice); `HapticEngine` with rumble replay from output reports; onboarding polish; APK build; the Steam setup guide shipped with it.
+**In scope:** gamepad layout; **layout switcher + basic button remapping** (the layout engine renders declarative definitions — [ADR-011](DECISIONS.md)); settings screen (rotation range, sensitivity, deadzones, haptics on/off/intensity, steering-axis choice); `HapticEngine` with rumble replay from output reports; onboarding polish; APK build; the Steam setup guide shipped with it.
 
 **Out of scope:** anything car-related, iOS, theming, store release process (parking lot).
 
@@ -75,6 +75,7 @@ Target: a stranger installs nothing on their PC, pairs their phone, and drives a
 - [ ] M3 spec written and approved
 - [ ] Game rumble reaches the phone as vibration; intensity levels are distinguishable
 - [ ] Gamepad layout complete and usable
+- [ ] Layouts switchable in-app; buttons remappable in settings ([ADR-011](DECISIONS.md))
 - [ ] `flutter analyze` and `flutter test` green
 - [ ] A person who has never seen the app completes pairing → driving in five minutes, with no help
 - [ ] APK + setup guide produced
@@ -127,7 +128,8 @@ Not scheduled, decided later — each enters scope only through a user decision 
 
 - iOS support (blocked by platform; see [ADR-005](DECISIONS.md))
 - PC receiver companion for non-Steam use cases
-- Per-game profiles beyond the Steam Input template
+- Full drag-and-drop layout editor + per-game auto-profiles ([ADR-011](DECISIONS.md) — revisit when V1 users ask)
+- More genre layouts (touchpad, FPS preset) — data-driven engine makes these cheap, demand decides
 - Localization; CI/CD when the repo is hosted; app-store release process
 - License choices per component ([ADR-007](DECISIONS.md))
 

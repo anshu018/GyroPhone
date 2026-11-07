@@ -11,7 +11,7 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 ## Completed
 
 - Research (2026-11-07): competitor map, market, open-source vetting, feasibility, economics — all sourced in [docs/RESEARCH.md](docs/RESEARCH.md)
-- Ten decisions locked in [docs/DECISIONS.md](docs/DECISIONS.md) (incl. Bluetooth HID transport, stack, sequence, OpenBot base, documentation system, agent persona, provisional brand)
+- Eleven decisions locked in [docs/DECISIONS.md](docs/DECISIONS.md) (incl. Bluetooth HID transport, stack, sequence, OpenBot base, documentation system, agent persona, provisional brand, data-driven layouts)
 - Complete documentation set — 11 files, written file-by-file, style per [CONVENTIONS.md](CONVENTIONS.md); persona in [PERSONA.md](PERSONA.md) ([ADR-009](docs/DECISIONS.md))
 - **Development environment set up (2026-11-07):** Flutter 3.47.9 stable installed at `C:\Users\ash74\dev\flutter` (in user PATH); Android cmdline-tools installed into the existing SDK (36.1.0); licenses accepted; `flutter doctor` fully green
 - **GitHub repo connected (2026-11-07):** private repo [github.com/anshu018/GyroPhone](https://github.com/anshu018/GyroPhone), branch `main`, `.gitignore` in place (secrets patterns per CONVENTIONS never-do #3), initial commit pushed

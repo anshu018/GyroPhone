@@ -123,3 +123,15 @@ Immutable decision log (architecture-decision-record style). Each entry records 
 **Decision.** **GyroPhone** is the provisional working brand on all public surfaces (GitHub repository, future package id discussions). "GyroPad" stays the internal codename for the local folder and this documentation. Only the README (public face) adopts GyroPhone now; the remaining docs keep the codename to avoid churning 11 files twice.
 
 **Consequences.** A final brand decision supersedes this ADR and triggers a full rename sweep (README, VISION, AGENTS, package id, store assets) — cheap while unpublished, so it must happen before any public release.
+
+## ADR-011 — Layouts are data-driven; remapping in V1, layout editor deferred
+
+**Date:** 2026-11-07 · **Status:** accepted
+
+**Context.** Competitors (Monect, RojX) market multiple control layouts — gamepad, race wheel with pedals and gears — and layout switching. Our plan had two hardcoded screens (wheel, gamepad). Shipping screens as code would make per-game button remapping, future genre layouts, and the cockpit app's layouts (Tiers 2–3) all require rewrites.
+
+**Options.** (a) Hardcoded layout screens (fast, rigid). (b) Data-driven layout engine: each layout is a declarative definition (control widgets, positions, HID bindings) rendered by one engine; users can switch layouts and remap buttons in V1; a full drag-and-drop editor stays out of scope.
+
+**Decision.** (b). `layouts/` becomes a layout engine that renders declarative layout definitions; wheel and gamepad ship as the first two definitions. M3 adds an in-app layout switcher and basic button remapping in settings. A visual layout editor and per-game auto-profiles go to the parking lot until V1 proves demand.
+
+**Consequences.** Slightly more upfront design in M2/M3 (a schema instead of two screens) in exchange for: user remapping, cheap new layouts later, and the same engine serving the cockpit app in Tiers 2–3. The layout schema is specified in the M2 spec.
