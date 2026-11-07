@@ -29,16 +29,15 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 
 ## Next, in order
 
-1. **Option A experiment (30 min, cheap):** full 356-byte DS4 descriptor on the Nothing Phone 1 — does it install? Does Steam reclassify? Data either way; do NOT build on it.
-2. **Write the M2 spec (`docs/specs/M2-wheel.md`)** with the corrected architecture: the wheel does NOT depend on Steam classification — phone-side sensor fusion (rotation vector + gyro → wheel angle) is sent as a plain steering AXIS in report 0x01, which racing games (BeamNG, Assetto Corsa) bind natively like any DirectInput wheel. Steam-Input gyro / DS4 classification only affects the *extras* (universal gyro mapping, M3 rumble) — those stay on the decision menu.
-3. Get M2 spec approved → implement (sensor pipeline, wheel model, wheel layout).
-4. Phone-side connect UI for bonded hosts (spec task 11, user-approved).
-5. Rumble (M3) decision deferred until Option A's data exists.
+1. **Write the M2 spec (`docs/specs/M2-wheel.md`)** with the corrected architecture: the wheel does NOT depend on Steam classification — phone-side sensor fusion (rotation vector + gyro → wheel angle) is sent as a plain steering AXIS in report 0x01, which racing games (BeamNG, Assetto Corsa) bind natively like any DirectInput wheel. Steam-Input gyro / DS4 classification only affects the *extras* (universal gyro mapping, M3 rumble) — those stay on the decision menu.
+2. Get M2 spec approved → implement (sensor pipeline, wheel model, wheel layout).
+3. Phone-side connect UI for bonded hosts (spec task 11, user-approved).
+4. Rumble (M3) decision deferred; its option menu no longer includes the full-descriptor disguise (declined by the user, see Open questions).
 
 ## Open questions
 
-- ~~Steam classification~~ **ANSWERED 2026-11-08: Generic Gamepad** (evidence chain in [spec open question 1](docs/specs/M1-pair-as-ds4.md)). Consequence limited to the extras — the M2 wheel works via the axis path regardless (see Next item 2).
-- Whether the full-DS4-descriptor install failure is OxygenOS-16-specific or Windows-26H2-wide (Nothing Phone 1 also runs the small descriptor — a full-descriptor retry on it is the Option A experiment above)
+- ~~Steam classification~~ **ANSWERED 2026-11-08: Generic Gamepad** (evidence chain in [spec open question 1](docs/specs/M1-pair-as-ds4.md)). Consequence limited to the extras — the M2 wheel works via the axis path regardless (see Next item 1).
+- **Full-descriptor retry experiment: DECLINED by the user (2026-11-08)** — will not be attempted. The 79-byte small descriptor is the shipping approach; why the full descriptor failed to install on this stack↔Windows pair stays an open mystery we are not spending time on. Consequence: Steam-Input gyro and M3 rumble must use non-disguise routes (DSU-style protocols for supporting games, or a revised ADR-001 with a PC-side component) — decided when M3 nears.
 
 ## Gotchas for next session
 
