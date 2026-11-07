@@ -158,6 +158,7 @@ Mirrors [ROADMAP.md](../ROADMAP.md) M1; a box is ticked only after the criterion
 8. `flutter analyze` + `flutter test` green; install on the Nord 5 via USB debugging.
 9. Device tests per R9 on Nord 5, then Nothing Phone 1; record latency + evidence.
 10. Docs in the same change as the work they describe: [ARCHITECTURE.md](../ARCHITECTURE.md) corrections (BT output is `0x11`, callback names, report-mode note, VID/PID risk), Ver-1 Step 1 ticks, [STATUS.md](../../STATUS.md) session entry, ROADMAP ticks only for criteria that passed; commit and push.
+11. **Phone-side connect UI for bonded hosts** (user-requested 2026-11-08): a status-screen list of bonded hosts with a Connect action — the bridge's device-initiated `connect()` already exists; this surfaces it. First-time discovery *from the phone* (earbuds-style scanning) is deliberately deferred to M3's onboarding pass (needs `BLUETOOTH_SCAN` + a consent flow; the discoverable-button flow is the proven first-time path).
 
 ## Pitfalls (do not)
 

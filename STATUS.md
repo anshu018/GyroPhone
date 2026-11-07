@@ -27,9 +27,10 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 ## Next, in order
 
 1. Record the latency numbers in the spec (R9) and tick the ROADMAP criterion
-2. Steam → Controller → click the entry: record DS4 vs Generic verdict — feeds the M2 gyro decision ([spec open question 1](docs/specs/M1-pair-as-ds4.md))
+2. Steam → Controller → click the entry: record DS4 vs Generic verdict — feeds the M2 gyro decision ([spec open question 1](docs/specs/M1-pair-as-ds4.md)) — wizard already ran with PlayStation-style input names (L3), full classification verdict pending
 3. Nothing Phone 1: install, pair, joy.cpl (OEM quirk check)
-4. Tick remaining ROADMAP M1 criteria; M1 exit → Ver-1 Step 2 (DS4 hardening)
+4. Spec task 10: phone-side connect UI for bonded hosts (user-approved; bridge support already exists)
+5. Tick remaining ROADMAP M1 criteria; M1 exit → Ver-1 Step 2 (DS4 hardening)
 
 ## Open questions
 
