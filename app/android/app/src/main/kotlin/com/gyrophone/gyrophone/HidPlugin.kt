@@ -13,10 +13,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.BinaryMessenger
@@ -38,6 +43,15 @@ import java.util.concurrent.Executor
  * Flutter via [mainHandler] because the platform channel sinks are main-thread
  * only.
  *
+ * M2 sensor hot loop (ADR-012): a second HandlerThread ([sensorThread])
+ * delivers gyro + rotation-vector events and runs [SensorFusion]; it publishes
+ * only the fused angle through a volatile field — zero channel crossings, zero
+ * allocations per event. [btExecutor] owns everything report-related: the
+ * [WheelModel], the [Ds4InputPacker] (single report owner: payload bytes,
+ * counter, dedupe, GET_REPORT cache), pedal state, and the ~120 Hz sender tick
+ * with latest-state semantics. Fusion parameters marshal to the sensor thread;
+ * everything else stays on btExecutor.
+ *
  * Permissions: the Dart side calls [ensurePermissions] before anything else.
  * Registration fails loudly on the channel if [BLUETOOTH_CONNECT] is missing;
  * the other methods log the reason and return false/empty rather than throw —
@@ -50,25 +64,36 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         private const val TAG = "HidPlugin"
         private const val METHOD_CHANNEL = "gyrophone/hid"
         private const val EVENT_CHANNEL = "gyrophone/hid_events"
+        private const val WHEEL_CHANNEL = "gyrophone/wheel"
 
         // Event names shared with lib/hid/hid_bridge.dart.
         private const val EVENT_APP_STATUS = "appStatus"
         private const val EVENT_CONNECTION_STATE = "connectionState"
         private const val EVENT_HOST_REQUEST = "hostRequest"
         private const val EVENT_BT_STATE = "btState"
+        private const val EVENT_STREAMING = "streaming"
 
         private const val PERMISSION_REQUEST_CODE = 0x4750 // "GP"
         private const val DISCOVERABLE_REQUEST_CODE = 0x4751 // "GP"+1
+
+        private const val TICK_MS = 8L // sender tick; the 120 Hz cap gates below it
+        private const val MIN_SEND_INTERVAL_NS = 8_333_333L // 120 Hz
+        private const val UI_EMIT_INTERVAL_NS = 16_666_667L // ≤60 Hz wheel stream
+        private const val LATENCY_RING_SIZE = 128
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val btThread = HandlerThread("gyrophone-hid").apply { start() }
     private val btHandler = Handler(btThread.looper)
     private val btExecutor = Executor { task -> btHandler.post(task) }
+    private val sensorThread = HandlerThread("gyrophone-sensors").apply { start() }
+    private val sensorHandler = Handler(sensorThread.looper)
 
     private val methodChannel = MethodChannel(messenger, METHOD_CHANNEL)
     private val eventChannel = EventChannel(messenger, EVENT_CHANNEL)
+    private val wheelChannel = EventChannel(messenger, WHEEL_CHANNEL)
     private var eventSink: EventChannel.EventSink? = null
+    private var wheelSink: EventChannel.EventSink? = null
 
     private val adapter: BluetoothAdapter?
         get() = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
@@ -77,13 +102,58 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
     private var proxyRequested = false
     private var pendingRegisterSdp: BluetoothHidDeviceAppSdpSettings? = null
 
-    /** Last input report 0x01 sent, kept so GET_REPORT(0x01) can be answered.
-     *  Initialized to the neutral report (sticks centered, hat released) —
-     *  "the current report" before the first send is neutral, not zeroed. */
-    private var lastInputReport: ByteArray = byteArrayOf(
-        0x80.toByte(), 0x80.toByte(), 0x80.toByte(), 0x80.toByte(),
-        0x08, 0x00, 0x00, 0x00, 0x00,
-    )
+    // --- M2 hot loop (ADR-012): fusion on [sensorThread], reports on [btExecutor] ---
+    private val fusion = SensorFusion()
+    private val wheelModel = WheelModel()
+    private val packer = Ds4InputPacker()
+
+    // Sensor-thread publications. Plain float/long volatile writes are atomic;
+    // the sender tick always consumes the freshest pair (latest-state semantics).
+    @Volatile private var latestFusedAngle = 0f
+    @Volatile private var latestArrivalNanos = 0L
+    @Volatile private var sensorEventCount = 0L
+
+    // btExecutor-owned hot-loop state.
+    private var armed = false // setStreaming from Dart
+    private var linked = false // host connection state, from the HID callback
+    private var hostAddress: String? = null
+    private var pedalThrottle = 0
+    private var pedalBrake = 0
+    private var lastSendNanos = 0L
+    private var streamingNotified = false
+    private val latencyRing = FloatArray(LATENCY_RING_SIZE)
+    private val latencyScratch = FloatArray(LATENCY_RING_SIZE)
+    private var latencyCount = 0
+    private var latencyIndex = 0
+    private var lastUiEmitNanos = 0L
+    private var lastRateSampleNanos = 0L
+    private var lastRateSampleCount = 0L
+    private val tickTask = object : Runnable {
+        override fun run() {
+            tick()
+            btHandler.postDelayed(this, TICK_MS)
+        }
+    }
+
+    private val sensorListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            val t0 = SystemClock.elapsedRealtimeNanos()
+            when (event.sensor.type) {
+                Sensor.TYPE_GYROSCOPE -> if (event.values.size >= 3) {
+                    fusion.onGyro(event.values[0], event.values[1], event.values[2], event.timestamp)
+                }
+                Sensor.TYPE_ROTATION_VECTOR -> if (event.values.size >= 4) {
+                    fusion.onRotationVector(event.values[0], event.values[1], event.values[2], event.values[3])
+                }
+                else -> return
+            }
+            latestFusedAngle = fusion.wheelAngleDeg()
+            latestArrivalNanos = t0
+            sensorEventCount++
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+    }
 
     private var pendingPermissionResult: Result? = null
     private var activity: Activity? = null
@@ -99,6 +169,12 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         override fun onConnectionStateChanged(device: BluetoothDevice, state: Int) {
             val stateName = connectionStateName(state)
             logD("onConnectionStateChanged ${device.address} -> $stateName")
+            // Runs on btExecutor (the callback executor): hot-loop gates update
+            // in place. On disconnect the streaming notification re-arms so a
+            // reconnect promotes to streaming again.
+            linked = state == BluetoothProfile.STATE_CONNECTED
+            hostAddress = if (linked) device.address else null
+            if (!linked) streamingNotified = false
             emit(EVENT_CONNECTION_STATE) {
                 mapOf(
                     "address" to device.address,
@@ -112,8 +188,9 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
             logD("onGetReport type=$type id=$id bufferSize=$bufferSize")
             try {
                 if (type == BluetoothHidDevice.REPORT_TYPE_INPUT && id == Ds4Descriptors.REPORT_ID_INPUT_SMALL) {
-                    val reply = ByteArray(maxOf(bufferSize, lastInputReport.size))
-                    lastInputReport.copyInto(reply)
+                    val current = packer.currentPayload()
+                    val reply = ByteArray(maxOf(bufferSize, current.size))
+                    current.copyInto(reply)
                     val replied = hidDevice?.replyReport(device, type, id, reply) ?: false
                     if (!replied) logD("replyReport rejected (input 0x01)")
                 } else if (type == BluetoothHidDevice.REPORT_TYPE_FEATURE && id == Ds4Descriptors.FEATURE_ID_CALIBRATION) {
@@ -195,6 +272,15 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
                 eventSink = null
             }
         })
+        wheelChannel.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                wheelSink = events
+            }
+
+            override fun onCancel(arguments: Any?) {
+                wheelSink = null
+            }
+        })
         ContextCompat.registerReceiver(
             context,
             btStateReceiver,
@@ -207,6 +293,32 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
             // both R9 devices; onAppStatusChanged stays the backup truth.
             ContextCompat.RECEIVER_EXPORTED,
         )
+        startSensors()
+        btHandler.post(tickTask)
+    }
+
+    /** Registers the IMU listeners at the fastest rate the hardware offers.
+     *  HIGH_SAMPLING_RATE_SENSORS is declared (manifest) — without it a
+     *  target-31+ app is capped at 200 Hz and requests above that throw
+     *  (RESEARCH.md, platform constraints). Runs for the plugin's lifetime;
+     *  the armed/linked gates keep the loop silent when it must not send. */
+    @SuppressLint("MissingPermission")
+    private fun startSensors() {
+        val manager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val gyro = manager?.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        val rotation = manager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        if (gyro == null || rotation == null) {
+            Log.e(TAG, "sensor start failed: gyro=${gyro != null} rotationVector=${rotation != null}")
+            return
+        }
+        val registered = manager.registerListener(sensorListener, gyro, SensorManager.SENSOR_DELAY_FASTEST, sensorHandler) &&
+            manager.registerListener(sensorListener, rotation, SensorManager.SENSOR_DELAY_FASTEST, sensorHandler)
+        logD("sensors registered=$registered gyro=${gyro.name} rotationVector=${rotation.name}")
+    }
+
+    private fun stopSensors() {
+        (context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager)
+            ?.unregisterListener(sensorListener)
     }
 
     fun setActivity(activity: Activity?) {
@@ -221,6 +333,10 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         discoverableResult = null
         methodChannel.setMethodCallHandler(null)
         eventChannel.setStreamHandler(null)
+        wheelChannel.setStreamHandler(null)
+        btHandler.removeCallbacks(tickTask)
+        stopSensors()
+        sensorThread.quitSafely()
         btHandler.post {
             try {
                 hidDevice?.unregisterApp()
@@ -248,6 +364,13 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         when (call.method) {
             "ensurePermissions" -> ensurePermissions(result)
             "requestDiscoverable" -> requestDiscoverable(result)
+            "setWheelParams" -> setWheelParams(call, result)
+            "reZero" -> sensorHandler.post {
+                fusion.captureReference()
+                replyOnMain(result) { true }
+            }
+            "setPedals" -> setPedals(call, result)
+            "setStreaming" -> setStreaming(call, result)
             "register" -> btExecutor.execute { register(result) }
             "unregister" -> btExecutor.execute {
                 val ok = try {
@@ -497,6 +620,149 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         }
     }
 
+    private fun setWheelParams(call: MethodCall, result: Result) {
+        val range = call.argument<Double>("range")
+        val deadzone = call.argument<Double>("deadzone")
+        val sensitivity = call.argument<Double>("sensitivity")
+        val curve = call.argument<String>("curve")
+        val axisMode = call.argument<String>("axisMode")
+        if (range == null || deadzone == null || sensitivity == null || curve == null || axisMode == null) {
+            result.error("args", "setWheelParams requires range, deadzone, sensitivity, curve, axisMode", null)
+            return
+        }
+        btExecutor.execute {
+            // Params are clamped by WheelModel's setters; unknown enum strings
+            // fall back to the safe defaults rather than failing the channel.
+            wheelModel.rangeDeg = range.toFloat()
+            wheelModel.deadzoneDeg = deadzone.toFloat()
+            wheelModel.sensitivity = sensitivity.toFloat()
+            wheelModel.curve = when (curve) {
+                "soft" -> WheelModel.Curve.SOFT
+                "sharp" -> WheelModel.Curve.SHARP
+                else -> WheelModel.Curve.LINEAR
+            }
+            val mode = when (axisMode) {
+                "flat" -> SensorFusion.AxisMode.FLAT
+                "cradle" -> SensorFusion.AxisMode.CRADLE
+                else -> SensorFusion.AxisMode.AUTO
+            }
+            // Fusion state is sensor-thread confined — marshal the axis mode.
+            sensorHandler.post { fusion.axisMode = mode }
+            replyOnMain(result) { true }
+        }
+    }
+
+    private fun setPedals(call: MethodCall, result: Result) {
+        val throttle = call.argument<Int>("throttle")
+        val brake = call.argument<Int>("brake")
+        if (throttle == null || brake == null) {
+            result.error("args", "setPedals requires throttle and brake", null)
+            return
+        }
+        btExecutor.execute {
+            pedalThrottle = throttle.coerceIn(0, 255)
+            pedalBrake = brake.coerceIn(0, 255)
+            replyOnMain(result) { true }
+        }
+    }
+
+    private fun setStreaming(call: MethodCall, result: Result) {
+        val enabled = call.argument<Boolean>("enabled")
+        if (enabled == null) {
+            result.error("args", "setStreaming requires enabled", null)
+            return
+        }
+        btExecutor.execute {
+            val wasArmed = armed
+            armed = enabled
+            if (!enabled && wasArmed && linked) {
+                // Focus loss / explicit disarm: the host must never hold a held
+                // wheel angle or a pressed pedal (M2 spec R1) — send neutral.
+                if (packer.pack(WheelModel.CENTER, 0, 0)) {
+                    val address = hostAddress
+                    if (address != null) {
+                        sendReport(address, Ds4Descriptors.REPORT_ID_INPUT_SMALL, packer.currentPayload())
+                    }
+                }
+            }
+            replyOnMain(result) { true }
+        }
+    }
+
+    /**
+     * The sender tick (btExecutor): applies the wheel model to the freshest
+     * fused angle, packs, and sends when the wire changes — capped at 120 Hz
+     * with latest-state semantics (never batched, never stale). Also paces the
+     * ≤60 Hz wheel UI stream and the sensor-rate/latency sampling.
+     */
+    private fun tick() {
+        val now = SystemClock.elapsedRealtimeNanos()
+        emitWheelStateMaybe(now)
+        if (!armed || !linked) return
+        if (now - lastSendNanos < MIN_SEND_INTERVAL_NS) return
+        val steering = wheelModel.apply(latestFusedAngle)
+        if (!packer.pack(steering, pedalThrottle, pedalBrake)) return
+        val address = hostAddress ?: return
+        val ok = sendReport(address, Ds4Descriptors.REPORT_ID_INPUT_SMALL, packer.currentPayload())
+        if (ok) {
+            lastSendNanos = now
+            recordLatency((now - latestArrivalNanos) / 1e6f)
+            if (!streamingNotified) {
+                streamingNotified = true
+                emit(EVENT_STREAMING) { mapOf("started" to true) }
+            }
+        } else {
+            // A rejected send must not poison dedupe — the host may not hold
+            // the report, so the next identical state re-sends (M1 semantics).
+            packer.invalidateLastSent()
+        }
+    }
+
+    private fun recordLatency(ms: Float) {
+        latencyRing[latencyIndex] = ms
+        latencyIndex = (latencyIndex + 1) % LATENCY_RING_SIZE
+        if (latencyCount < LATENCY_RING_SIZE) latencyCount++
+    }
+
+    private fun emitWheelStateMaybe(now: Long) {
+        if (now - lastUiEmitNanos < UI_EMIT_INTERVAL_NS) return
+        val firstSample = lastRateSampleNanos == 0L
+        val hz = if (firstSample) {
+            0f
+        } else {
+            val seconds = (now - lastRateSampleNanos) / 1e9f
+            if (seconds > 0f) ((sensorEventCount - lastRateSampleCount) / seconds) else 0f
+        }
+        lastUiEmitNanos = now
+        lastRateSampleNanos = now
+        lastRateSampleCount = sensorEventCount
+        val stats = latencyStats()
+        val angle = latestFusedAngle
+        val samples = latencyCount
+        mainHandler.post {
+            wheelSink?.success(
+                mapOf(
+                    "angle" to angle,
+                    "avg" to stats?.first,
+                    "p95" to stats?.second,
+                    "n" to samples,
+                    "sensorHz" to hz,
+                )
+            )
+        }
+    }
+
+    /** (avg, p95) over the latency ring; null until the first send. */
+    private fun latencyStats(): Pair<Float, Float>? {
+        if (latencyCount == 0) return null
+        System.arraycopy(latencyRing, 0, latencyScratch, 0, latencyCount)
+        java.util.Arrays.sort(latencyScratch, 0, latencyCount)
+        var sum = 0f
+        for (i in 0 until latencyCount) sum += latencyScratch[i]
+        val p95Index = ((latencyCount * 95) / 100).coerceIn(0, latencyCount - 1)
+        return sum / latencyCount to latencyScratch[p95Index]
+    }
+
     @SuppressLint("MissingPermission")
     private fun sendReport(address: String, id: Byte, data: ByteArray): Boolean {
         if (!hasConnectPermission()) {
@@ -507,15 +773,6 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         val localAdapter = adapter ?: return false.also { logD("sendReport failed: adapter unavailable") }
         val remote = remoteDevice(localAdapter, address) ?: return false.also {
             logD("sendReport failed: malformed address")
-        }
-        if (id == Ds4Descriptors.REPORT_ID_INPUT_SMALL) {
-            if (data.size == lastInputReport.size) {
-                data.copyInto(lastInputReport)
-            } else {
-                // Our own Dart side always sends 9 bytes; a size mismatch
-                // means a caller bug — log it instead of crashing the thread.
-                logD("sendReport: unexpected 0x01 payload size ${data.size}, not cached")
-            }
         }
         val ok = try {
             device.sendReport(remote, id.toInt(), data)

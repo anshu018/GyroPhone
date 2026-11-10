@@ -9,6 +9,11 @@
     <uses-permission
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
+    <!-- M2 sensor hot loop: without this a target-31+ app is rate-limited to
+         200 Hz on gyro-class sensors, and faster requests throw
+         SecurityException (docs/RESEARCH.md, platform constraints). Normal
+         permission — granted at install, no runtime prompt. -->
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
     <application
         android:label="GyroPhone"
         android:name="${applicationName}"
