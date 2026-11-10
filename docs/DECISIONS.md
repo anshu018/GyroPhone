@@ -135,3 +135,15 @@ Immutable decision log (architecture-decision-record style). Each entry records 
 **Decision.** (b). `layouts/` becomes a layout engine that renders declarative layout definitions; wheel and gamepad ship as the first two definitions. M3 adds an in-app layout switcher and basic button remapping in settings. A visual layout editor and per-game auto-profiles go to the parking lot until V1 proves demand.
 
 **Consequences.** Slightly more upfront design in M2/M3 (a schema instead of two screens) in exchange for: user remapping, cheap new layouts later, and the same engine serving the cockpit app in Tiers 2–3. The layout schema is specified in the M2 spec.
+
+## ADR-012 — The M2 sensor hot loop runs native; the input report has one Kotlin owner
+
+**Date:** 2026-11-11 · **Status:** accepted
+
+**Context.** M2 sends a fused steering angle at sensor rate (≥100 Hz) against the <10 ms input-path budget and the no-hot-loop-allocations invariant ([ARCHITECTURE.md](ARCHITECTURE.md)). M1's measured Dart send path — one channel round trip — averaged 7.85 ms (touch → `sendReport` complete); a sensor path routed through Dart would add an upstream channel hop and per-event codec allocations on both sides. The documented module map (`sensors/` in Dart) predates this measurement.
+
+**Options.** (a) Dart-side fusion, per the original module map: sensors streamed to Dart; fusion, model, packing, and sending in Dart. (b) Hybrid: fusion native, angle streamed to Dart, packing/sending stay in Dart. (c) Native hot loop: sensor event → fusion → wheel model → pack → send entirely in Kotlin.
+
+**Decision.** (c), approved by the user with the [M2 spec](specs/M2-wheel.md) on 2026-11-11. Only zero channel crossings on the hot path can meet the budget and the allocation invariant. A dedicated sensor `HandlerThread` runs fusion and posts a scalar pre-model angle to `btExecutor`, which owns the wheel model, packing, dedupe, counter, `lastInputReport`, and sends — one report owner, single-threaded. Dart keeps lifecycle, settings, pedals, and the UI (≤60 Hz angle stream). ADR-002's shape ("Flutter UI + Kotlin native core") is unchanged; this decision moves the `sensors/` module into that native core.
+
+**Consequences.** Positive: the latency budget is achievable, no allocations per sensor event, report state is single-threaded, and M3 touch inputs can merge into the same owner. Negative: the steering math lives in Kotlin (two languages for one model) — mitigated by pure-math classes with exhaustive JVM tests; the Dart packer and its golden tests retire 1:1 into the Kotlin suite; `HidPlugin.kt` grows and carries its strict review and device-test discipline; [ARCHITECTURE.md](ARCHITECTURE.md)'s module map updates in the same change as the M2 implementation.

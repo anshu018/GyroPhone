@@ -43,25 +43,27 @@ Target: a stranger installs nothing on their PC, pairs their phone, and drives a
 
 **Exit:** a working pairing demo on the user's PC; measurements logged.
 
-### M2 — "The wheel": gyro into Steam — not started
+### M2 — "The wheel": gyro steering over the axis path — in progress
 
-**Goal.** Real gyro steering, the product's identity, working in a real game.
+**Goal.** Real gyro steering, the product's identity, working in a real game — no Steam Input remapping needed. (Re-framed 2026-11-11 from the original "gyro into Steam" wording, approved with the spec: Steam classifies the device as Generic, and racing games bind a DirectInput steering axis natively, so the wheel needs no Steam blessing.)
 
-**Spec:** `docs/specs/M2-wheel.md` (written after M1 passes).
+**Spec:** `docs/specs/M2-wheel.md` (approved 2026-11-11).
 
-**In scope:** sensor fusion service (rotation vector + gyro); `WheelModel` (steering-axis choice, configurable rotation range up to 900°, deadzone, sensitivity, response curve, re-zero control); motion block population in the input report; racing-wheel layout v1; Steam Input template config and a short setup guide.
+**In scope:** native sensor hot loop (fusion: rotation vector + gyro); `WheelModel` (steering-axis choice, configurable rotation range up to 900°, deadzone, sensitivity, response curve, re-zero control); steering axis + pedal bytes in input report `0x01` (no descriptor change); racing-wheel layout v1 = first instance of the layout schema ([ADR-011](DECISIONS.md)), including throttle/brake buttons and the connection sheet (M1 task 11 fold-in); sensor-path latency measurement.
 
-**Out of scope:** gamepad layout, haptics, settings screen, car anything.
+**Out of scope:** gamepad layout, haptics, settings screen with persistence, car anything.
 
 **Acceptance criteria:**
-- [ ] M2 spec written and approved
-- [ ] Steam Input receives gyro; the template config steers a racing game (BeamNG or Assetto Corsa)
-- [ ] Rotation range, deadzone, and sensitivity are configurable and take effect live
+- [x] M2 spec written and approved (2026-11-11)
+- [ ] The fused wheel angle drives the steering axis of report `0x01`, and BeamNG or Assetto Corsa steers with it bound natively in-game (no Steam Input remapping)
+- [ ] Rotation range (up to 900°), deadzone, and sensitivity are configurable and take effect live
 - [ ] Re-zero works and is reachable during play
 - [ ] No manual re-zero needed during a 10-minute session (drift check)
-- [ ] Device test passes per the byte-faithfulness rule ([ARCHITECTURE.md](ARCHITECTURE.md))
+- [ ] Sensor-path latency measured and recorded against the <10 ms budget in [ARCHITECTURE.md](ARCHITECTURE.md)
+- [ ] Device test passes per the byte-faithfulness rule ([ARCHITECTURE.md](ARCHITECTURE.md)); sensor path verified on the second device
+- [ ] `flutter analyze`, `flutter test`, and `gradlew testDebugUnitTest` green
 
-**Exit:** the user drives a Steam racing game with the phone as the wheel.
+**Exit:** the user drives a racing game with the phone as the wheel.
 
 ### M3 — "The feel": haptics, gamepad, ship — not started
 

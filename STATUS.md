@@ -3,10 +3,10 @@
 The living snapshot. Read this first, every session, human or agent. Update it at the end of every session and after every milestone (contract in [AGENTS.md](AGENTS.md)).
 
 **Last updated:** 2026-11-11
-**Current phase:** Phase 0 — M1 complete; **M2 spec written, awaiting approval**
-**Current goal:** get `docs/specs/M2-wheel.md` approved — no code before that
-**Next action:** user reviews the M2 spec; implementation follows its task list on explicit approval
-**Blockers:** none
+**Current phase:** Phase 0 — **M2 in progress** (spec approved 2026-11-11; implementation started)
+**Current goal:** implement the M2 wheel per `docs/specs/M2-wheel.md` (native hot loop → wheel screen → gates)
+**Next action:** Kotlin math core (SensorFusion, WheelModel, Ds4InputPacker) with JVM tests; then HidPlugin wiring; then Dart wheel screen
+**Blockers:** none — device-test day needs the user (~45 min, Nord 5 + PC Bluetooth), scheduled after code is complete
 
 ## Completed
 
@@ -22,7 +22,7 @@ The living snapshot. Read this first, every session, human or agent. Update it a
   - Steam lists both phones simultaneously as "Sony Computer Entertainment Wireless Controller"; its mapping wizard ran with PlayStation-style input names (L3) — definitive DS4-vs-generic classification is Step 2's first task
 - Platform findings recorded in the spec's Pitfalls + [RESEARCH.md](docs/RESEARCH.md): stale bonds poison pairing; app must be foreground during pairing (in-app discoverable request); full 356-byte DS4 descriptor fails to install on this stack↔Windows pair (M1 uses the DS4's own 79-byte small-report descriptor — wire-faithful); subclass 0x08 exonerated; registration-slot conflicts; Windows name cache; adb quirks (logcat filtering, wireless-pairing VPN address)
 - ROADMAP M1 fully ticked; Ver-1 Step 1 marked DONE
-- **M2 spec written** (2026-11-11, `docs/specs/M2-wheel.md`): axis path via report `0x01` byte 0 (X usage, no descriptor change), native Kotlin sensor hot loop (user decision), full cockpit layout v1 (user decision), Ver-1 Step 2 closed as obsolete, `HIGH_SAMPLING_RATE_SENSORS` fact verified against the Android docs and recorded in RESEARCH.md. Presented for approval.
+- **M2 spec written** (2026-11-11, `docs/specs/M2-wheel.md`): axis path via report `0x01` byte 0 (X usage, no descriptor change), native Kotlin sensor hot loop (user decision), full cockpit layout v1 (user decision), Ver-1 Step 2 closed as obsolete, `HIGH_SAMPLING_RATE_SENSORS` fact verified against the Android docs and recorded in RESEARCH.md. **APPROVED by the user 2026-11-11 — implementation started; ADR-012 recorded; ROADMAP M2 re-framed to the axis path in the same change.**
 
 ## In progress
 

@@ -1,6 +1,6 @@
 # M2 spec — the wheel: gyro steering over the axis path
 
-Milestone: [M2](../ROADMAP.md#m2--the-wheel-gyro-into-steam--not-started) · Ver-1 Steps 3–4 · Written 2026-11-11, presented for approval. This file is the source of truth for M2; code implements it.
+Milestone: [M2](../ROADMAP.md#m2--the-wheel-gyro-steering-over-the-axis-path--in-progress) · Ver-1 Steps 3–4 · Written 2026-11-11, approved by the user the same day. This file is the source of truth for M2; code implements it.
 
 ## Goal
 
@@ -100,7 +100,7 @@ No descriptor change. The 79-byte small descriptor stays exactly as registered i
 
 Mirrors [ROADMAP.md](../ROADMAP.md) M2, re-framed to the axis path (ROADMAP M2's section text is updated in the same change). A box is ticked only after the criterion passes on hardware.
 
-- [ ] M2 spec written and approved
+- [x] M2 spec written and approved (2026-11-11)
 - [ ] The fused wheel angle drives the steering axis of report `0x01`, and BeamNG or Assetto Corsa steers with it bound natively in-game (no Steam Input remapping)
 - [ ] Rotation range (up to 900°), deadzone, and sensitivity are configurable and take effect live
 - [ ] Re-zero works and is reachable during play

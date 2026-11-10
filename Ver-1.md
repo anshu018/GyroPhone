@@ -112,7 +112,7 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 
 ## Step 3 — Sensor pipeline (fusion + wheel model)
 
-**Status: IN PROGRESS** (2026-11-11: M2 spec written at `docs/specs/M2-wheel.md`, awaiting user approval; Step 2's disposition — obsolete, residue folded into Steps 3–5 — is recorded in that spec) · Milestone: M2 · Depends on: 2
+**Status: IN PROGRESS** (2026-11-11: M2 spec approved by the user; implementation started — Kotlin math core first) · Milestone: M2 · Depends on: 2
 
 **Goal:** real steering — drift-free wheel angle and motion data at sensor rate.
 
