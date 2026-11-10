@@ -80,6 +80,10 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         private const val MIN_SEND_INTERVAL_NS = 8_333_333L // 120 Hz
         private const val UI_EMIT_INTERVAL_NS = 16_666_667L // ≤60 Hz wheel stream
         private const val LATENCY_RING_SIZE = 128
+        private const val AUTO_ZERO_HOLD_NS = 1_200_000_000L // held still 1.2 s → capture grip
+        private const val AUTO_ZERO_TOLERANCE_DEG = 1.5f
+        private const val PACKED_EMPTY = Long.MIN_VALUE
+        private const val HEARTBEAT_NS = 5_000_000_000L // device-debug heartbeat; temporary
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -107,10 +111,13 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
     private val wheelModel = WheelModel()
     private val packer = Ds4InputPacker()
 
-    // Sensor-thread publications. Plain float/long volatile writes are atomic;
-    // the sender tick always consumes the freshest pair (latest-state semantics).
-    @Volatile private var latestFusedAngle = 0f
-    @Volatile private var latestArrivalNanos = 0L
+    // Sensor-thread publication. One packed volatile word so the tick can
+    // never read the angle of one event with the arrival time of a newer one
+    // (device finding 2026-11-11: separate volatiles produced negative
+    // latency). High 32 bits: angle in centidegrees. Low 32: arrival
+    // SystemClock time; both ends subtract in 32-bit wrap, correct for any
+    // true delta < 2.1 s.
+    @Volatile private var latestSampleBits = PACKED_EMPTY
     @Volatile private var sensorEventCount = 0L
 
     // btExecutor-owned hot-loop state.
@@ -128,12 +135,24 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
     private var lastUiEmitNanos = 0L
     private var lastRateSampleNanos = 0L
     private var lastRateSampleCount = 0L
+    private var lastHeartbeatNanos = 0L
+    private var sendsSinceReconnect = 0
     private val tickTask = object : Runnable {
         override fun run() {
             tick()
             btHandler.postDelayed(this, TICK_MS)
         }
     }
+
+    // Auto re-zero (launch grip calibration): the first time the phone has
+    // been held nearly still for a moment after the fusion is ready, that
+    // grip becomes "straight" — the user must not need the RE-ZERO button
+    // every session (device finding 2026-11-11: reference used to stay at
+    // the launch pose, so a landscape grip read ~60°). Once per process;
+    // grip changes mid-session are what the RE-ZERO button is for.
+    private var autoZeroed = false
+    private var autoZeroPendingAngle = 0f
+    private var autoZeroPendingSinceNs = 0L
 
     private val sensorListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
@@ -147,12 +166,46 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
                 }
                 else -> return
             }
-            latestFusedAngle = fusion.wheelAngleDeg()
-            latestArrivalNanos = t0
+            val angle = fusion.wheelAngleDeg()
+            latestSampleBits = ((angle * 100).toLong() shl 32) or (t0 and 0xFFFFFFFFL)
             sensorEventCount++
+            maybeAutoZero(angle, t0)
         }
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+    }
+
+    /** Unpacks the latest sample; null before the first sensor event. */
+    private fun latestSample(): Pair<Float, Long>? {
+        val bits = latestSampleBits
+        if (bits == PACKED_EMPTY) return null
+        val angle = (bits shr 32).toInt() / 100f
+        val arrival = bits and 0xFFFFFFFFL
+        return angle to arrival
+    }
+
+    /** Captures the reference once the phone has held still in a grip. */
+    private fun maybeAutoZero(angle: Float, nowNs: Long) {
+        if (autoZeroed || !fusion.isReady()) return
+        if (autoZeroPendingSinceNs == 0L) {
+            autoZeroPendingAngle = angle
+            autoZeroPendingSinceNs = nowNs
+            return
+        }
+        if (nowNs - autoZeroPendingSinceNs < AUTO_ZERO_HOLD_NS) return
+        if (kotlin.math.abs(angle - autoZeroPendingAngle) <= AUTO_ZERO_TOLERANCE_DEG) {
+            fusion.captureReference()
+            autoZeroed = true
+            // Re-publish with the fresh (now zero) angle so the next tick
+            // sends the new straight position immediately.
+            val t0 = SystemClock.elapsedRealtimeNanos()
+            latestSampleBits = ((fusion.wheelAngleDeg() * 100).toLong() shl 32) or (t0 and 0xFFFFFFFFL)
+            logD("auto re-zero captured the current grip")
+        } else {
+            // Still being moved — restart the stillness window.
+            autoZeroPendingAngle = angle
+            autoZeroPendingSinceNs = nowNs
+        }
     }
 
     private var pendingPermissionResult: Result? = null
@@ -698,15 +751,23 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
     private fun tick() {
         val now = SystemClock.elapsedRealtimeNanos()
         emitWheelStateMaybe(now)
+        if (now - lastHeartbeatNanos >= HEARTBEAT_NS) {
+            lastHeartbeatNanos = now
+            logD("tick armed=$armed linked=$linked angle=${latestSample()?.first} pedals=$pedalThrottle/$pedalBrake sends=$sendsSinceReconnect")
+        }
         if (!armed || !linked) return
         if (now - lastSendNanos < MIN_SEND_INTERVAL_NS) return
-        val steering = wheelModel.apply(latestFusedAngle)
+        val sample = latestSample() ?: return
+        val steering = wheelModel.apply(sample.first)
         if (!packer.pack(steering, pedalThrottle, pedalBrake)) return
         val address = hostAddress ?: return
         val ok = sendReport(address, Ds4Descriptors.REPORT_ID_INPUT_SMALL, packer.currentPayload())
         if (ok) {
             lastSendNanos = now
-            recordLatency((now - latestArrivalNanos) / 1e6f)
+            sendsSinceReconnect++
+            // 32-bit-wrap subtraction; skip samples older than the 2.1 s wrap.
+            val deltaNs = (now - sample.second) and 0xFFFFFFFFL
+            if (deltaNs <= Int.MAX_VALUE) recordLatency(deltaNs / 1e6f)
             if (!streamingNotified) {
                 streamingNotified = true
                 emit(EVENT_STREAMING) { mapOf("started" to true) }
@@ -737,7 +798,7 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         lastRateSampleNanos = now
         lastRateSampleCount = sensorEventCount
         val stats = latencyStats()
-        val angle = latestFusedAngle
+        val angle = latestSample()?.first ?: 0f
         val samples = latencyCount
         mainHandler.post {
             wheelSink?.success(
@@ -841,7 +902,10 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
 
     private fun logD(message: String) {
         // Centralized log point for every HID transition (CONVENTIONS.md:
-        // no bare debugPrint; report bytes are never logged).
-        Log.d(TAG, message)
+        // no bare debugPrint; report bytes are never logged). Logged at INFO:
+        // this OxygenOS 16 build drops app-level DEBUG lines from logcat
+        // entirely (observed 2026-11-11 — M1 never noticed because its
+        // debugging leaned on Bluetooth-stack logs). INFO always passes.
+        Log.i(TAG, message)
     }
 }
