@@ -30,9 +30,12 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 
 ## Next, in order
 
-1. **M2 device-test day (needs the user)**: Nord 5 over USB → install → pair from the PC (app foreground!) → joy.cpl steering-byte sweep (byte-faithfulness) → BeamNG/Assetto Corsa bind `X Axis` to steering + drive with pedals → 10-min drift check → record sensor-path latency → repeat the sensor sanity on the Nothing Phone 1. Capture per-game binding steps for the Step 9 guide.
-2. Tick ROADMAP M2 criteria that pass; record latency/drift numbers in the M2 spec + RESEARCH.md; resolve the spec's open questions (RV vs GAME_ROTATION_VECTOR, quantization feel, X vs Rz axis).
-3. Rumble (M3) decision deferred; its option menu no longer includes the full-descriptor disguise (declined by the user, see Open questions).
+1. **M2 device test — resume the dead-axis hunt (all state below is self-contained).**
+   Facts: phone EXONERATED (heartbeat-counted accepted sends during turns, latency ring filling, avg 1.12 ms / p95 2.83 ms — budget met); fresh bond + freshly-installed HID collection on the PC; axis still frozen at center in joy.cpl. Re-pairing does NOT fix it. Prior-art research (blugaemand TODO "Known constraints"): `PID&0000` devnode identity is NORMAL for Android (their Xiaomi publishes the same) — do not chase it; "hosts cache the descriptor at pair time" re-confirmed.
+   **First diagnostic (5 min, no user): `adb shell btmon` streaming while the user turns the wheel.** If our report bytes appear as ACL TX → the phone transmits and the PC drops → the reset is a **PC reboot (USER'S action — never-do #10; it also ends the agent session, so give the user the post-reboot steps first: unlock → open GyroPhone app → it auto-connects → joy.cpl → Properties → turn wheel)**. If NO TX → the phone's stack accepts the binder call but never transmits (its connection bookkeeping is broken) → re-register + BT toggle, then reconsider.
+   Then (in order): axis sweep in joy.cpl (byte-faithfulness ✓ criterion), pedals in joy.cpl, game bind (LFS demo or BeamNG/AC per the chat-agreed ladder), 10-min drift, second device (Nothing Phone 1 — needs the slot check first: `ps -A | grep -v gyrophone`).
+2. Tick ROADMAP M2 criteria that pass; record final numbers in the M2 spec + here; resolve the spec's open questions (RV vs GAME_ROTATION_VECTOR — decided by the drift session; quantization feel; X vs Rz).
+3. Rumble (M3) decision deferred; full-descriptor disguise stays declined.
 
 ## Open questions
 
@@ -41,7 +44,9 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 
 ## Gotchas for next session
 
+- **NEVER-DO #10 (new, user-mandated 2026-11-11): ask in chat before rebooting/restarting any of the user's devices, before UAC/admin elevation, before uninstalling/force-stopping apps they didn't name, before removing bonds — and explain what+why before any permission prompt. NEVER root/flash/system-modify the phone.** General autonomy covers routine reversible in-scope work only. The phone reboot + unexplained UAC prompt today were corrected by the user; do not repeat.
 - **All M2 spec decisions live in the spec** — read `docs/specs/M2-wheel.md` before any M2 code. The two user decisions of 2026-11-11: the sensor hot loop is native Kotlin (report ownership moves off Dart), and wheel layout v1 is the full cockpit (pedals included). `HIGH_SAMPLING_RATE_SENSORS` goes in the manifest from the first M2 build (Android 12+ rate-limits/throws otherwise — see RESEARCH.md platform constraints).
+- **M2 device-session gotchas (2026-11-11):** only ONE app holds the HID registration slot and a foreign holder (blugaemand!) survives BT toggles — check `ps -A` for other HID apps first; OxygenOS 16 drops app `Log.d` from logcat (we log INFO now); the log buffer churns in ~3 min (stream `adb logcat > file`); joy.cpl shows CURRENT state — sample DURING the motion; **the phone is EXONERATED for the dead axis — do not re-debug the sender; run `btmon` per Next item 1**; re-pairing does not rebuild a poisoned devnode and `PID&0000` is normal Android (do not chase it).
 - **All M1 pairing pitfalls live in [the spec's Pitfalls](docs/specs/M1-pair-as-ds4.md) — read them before touching Bluetooth code.** The big three: stale bonds poison pairing (remove both ends, re-pair); the registered app must be foreground during pairing (in-app "Make discoverable" handles it); the 79-byte small descriptor is the shipping artifact (the full 356-byte one is kept byte-exact as reference only).
 - Only one app can hold the HID registration per phone; force-stop doesn't reliably release it — toggle Bluetooth to clear (`adb shell svc bluetooth disable/enable`).
 - `adb logcat` tag filtering flakes on this machine; use `adb shell "logcat -d | grep …"`. The Nord 5 works over USB adb; the Nothing Phone 1 works over **wireless** adb (paired; its dialog shows the VPN IP when its VPN is on — use `adb mdns services` for the real address).

@@ -145,6 +145,17 @@ Pre-filled from the [M1 spec](M1-pair-as-ds4.md), [RESEARCH.md](../RESEARCH.md),
 - A rejected send to a merely-registered host still errors native-side — gate sends on the connected state and invalidate dedupe on any failure (M1 semantics, now native).
 - Do not claim the <10 ms budget met without the recorded measurement (never-do #9).
 
+Appended during the 2026-11-11 device session (Nord 5):
+
+- **One app holds the HID registration slot, and a stale third-party holder survives everything short of stopping it.** `registerApp` failed with `failed because another app is registered` — the holder was blugaemand (installed for the M1 control experiment, process alive). The M1-documented Bluetooth-toggle cure did NOT clear it while the holder process lived; force-stopping the holder app + a Bluetooth toggle did. Next session: `adb shell ps -A | grep -v gyrophone` for other HID-device apps BEFORE debugging our own registration.
+- **This OxygenOS 16 build drops app-level `Log.d` from logcat entirely.** HidPlugin logs at INFO now. M1 never noticed because its debugging leaned on Bluetooth-stack logs.
+- **The main log buffer churns in ~3 minutes** on this device (256 KiB, system spam). `logcat -d` archaeology loses startup logs; stream to a file (`adb logcat > file`, backgrounded) instead.
+- **Publish angle+arrival as one packed word, never two volatiles** — the sender tick paired a new angle with a newer arrival and produced negative latency. Packed 64-bit (centidegrees << 32 | arrival low-32), wrap-safe subtraction.
+- **The fusion reference defaults to the launch pose** — a user gripping the phone in landscape at launch read ~60°. Fixed: auto-capture once the phone holds still ~1.2 s after sensors are ready; the RE-ZERO button stays for mid-session grip changes.
+- **joy.cpl shows current state, not history** — sample the axis DURING the motion. We "proved" a dead axis three times by reading after the wheel returned to center.
+- **Re-pairing does not rebuild a poisoned HID devnode.** After two full re-pairs the Nord's HID devnode stayed `PID&0000` (the M1 record says it was `PID&1200`) and the axis stayed dead with the phone sending accepted reports. The devnode is keyed by MAC and reused across bonds; deleting it needs admin (pnputil /remove-device) — user-gated per never-do #10.
+- **OPEN (next session's first lever): with the phone exonerated (heartbeat-counted accepted sends, latency ring filling) and a fresh bond + fresh collection, the PC's axis stays frozen — suspicion is on the PC Bluetooth stack after a day of registration wars and ~30 connect cycles. The reset is a PC reboot (user action — never-do #10). Plan in STATUS.md.**
+
 ## Lessons learned
 
 Filled in when the milestone closes.

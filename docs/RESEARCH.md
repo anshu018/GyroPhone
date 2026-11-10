@@ -167,6 +167,20 @@ Measured on: OnePlus Nord 5 (CPH2707, OxygenOS, Android 16 / API 36) ↔ Windows
 
 **Windows name cache (Reported).** Windows reuses a paired device's friendly controller name across remove/re-pair cycles; a controller can keep a stale name after re-pairing. Cosmetic — mappings and function follow the current SDP record.
 
+### On-device M2 findings — Nord 5 (2026-11-11, first wheel session)
+
+Measured on: OnePlus Nord 5 (CPH2707, OxygenOS 16 / Android 16) ↔ Windows 11 26H2, M2 debug build. All findings below are our own measurements from this session unless labeled otherwise.
+
+**Sensor-path latency (Verified — our measurement).** The native hot loop's first live numbers: **avg 1.12 ms, p95 2.83 ms** over a full 128-sample ring while steering — roughly 9× inside the <10 ms budget ([M2 spec R9](specs/M2-wheel.md)). The sensor→report path is no longer the latency risk; the budget conversation moves to the game/host side.
+
+**Registration-slot holder (Verified — our measurement).** A third-party HID-device app (blugaemand, kept from the M1 control experiment) held the one registration slot with a live process; `registerApp` failed with `failed because another app is registered` and **the Bluetooth-toggle cure from M1 did not work while the holder process was alive** — it required force-stopping the holder app first, then a toggle. M1's note ("force-stop doesn't reliably release it — toggle clears it") described OUR app as the holder; a foreign holder is stickier.
+
+**App debug logs suppressed (Verified — our measurement).** This OxygenOS 16 build does not deliver app-level `Log.d` to logcat at all (system tags fine). Info-level passes. All HidPlugin logging moved to `Log.i`. The main log buffer also churns in ~3 minutes (256 KiB) — stream logcat to a file instead of `logcat -d` archaeology.
+
+**Fusion + wheel feel (Verified — user's hands).** The complementary fusion tracked the user's wheel-plane turns 1:1 on the on-screen arc; RE-ZERO captured the grip correctly; the auto-re-zero-at-grip fix (capture on first ~1.2 s of stillness) removed the launch-pose offset the user reported (~60° in landscape grip at launch).
+
+**OPEN PROBLEM — the PC never parses the reports (Verified symptom, cause open).** With the app registered, connected, and streaming (heartbeat-counted accepted `sendReport` calls, latency ring filling, steering bytes varying with the turn), the Windows axis (joy.cpl X) stayed frozen at center. Observed across: the stale bond, a full remove-and-re-pair on both ends (fresh bond, fresh `HID-compliant game controller` devnode), and multiple connection cycles. The devnode identity stayed `VID&0001001D_PID&0000` across re-pairs (M1's recorded enumeration was `PID&1200`) — the devnode is keyed by MAC and reused, so a corrupted first install can survive re-pairing; deleting it requires admin (pnputil, user-gated). Leading suspicion after a day of registration-slot wars and ~30 connection cycles: the **PC Bluetooth stack itself is wedged**; the planned reset is a PC reboot (user action). Prior-art research continues next session before that.
+
 ## Keeping this current
 
 - Every status claim carries its date. When a fact is re-verified later, update the date and the source; when a fact is superseded, **remove it** rather than annotating it.
