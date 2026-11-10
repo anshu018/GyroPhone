@@ -48,7 +48,7 @@ Two architecture decisions made with the user on 2026-11-11 shape everything bel
 ### R3 — WheelModel (Kotlin, pure math, exhaustively JVM-tested)
 
 - Configurable range 90°–900°, default 900°. Quantization constraint, documented honestly: the axis is 8-bit (255 distinct positions across ±range/2), so 900° ≈ 3.53°/step; games smooth, and the response curve shapes the center. If the drive test feels quantization, the fallback is a lower default range (450° ≈ 1.76°/step) — range is configurable either way.
-- Pipeline order: re-zeroed angle → deadzone (physical degrees near zero, rescaled outside) → sensitivity multiplier → response curve (monotonic, symmetric, endpoints preserved) → clamp to ±range/2 → byte mapping `128 + round(127 · clamped/(range/2))`.
+- Pipeline order: re-zeroed angle → deadzone (physical degrees near zero, rescaled outside against the effective range so ±range/2 still reaches full lock) → sensitivity multiplier → response curve (monotonic, symmetric, endpoints preserved) → clamp to ±range/2 → byte mapping `128 + round(127 · clamped/(range/2))`.
 - Re-zero captures the current fused orientation as the reference (marshaled to the sensor thread) and resets model state (angle 0, filter state cleared) — a stale reference would reintroduce the offset it exists to clear.
 
 ### R4 — Report `0x01` wiring (byte-faithful)
