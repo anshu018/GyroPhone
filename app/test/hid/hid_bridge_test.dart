@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:gyrophone/hid/ds4_report.dart';
 import 'package:gyrophone/hid/hid_bridge.dart';
 import 'package:gyrophone/hid/hid_log.dart';
+import 'package:gyrophone/hid/wheel_frame.dart';
 
 /// Records every platform-channel call and answers like the real plugin.
 class FakePlugin {
@@ -13,8 +13,6 @@ class FakePlugin {
 
   bool permissionGranted = true;
   bool registerFails = false;
-  bool sendSucceeds = true;
-  bool sendThrows = false;
   List<Map<String, Object?>> hosts = const [];
 
   Future<dynamic> call(String method, [dynamic args]) async {
@@ -33,11 +31,11 @@ class FakePlugin {
         return true;
       case 'getHosts':
         return hosts;
-      case 'sendReport':
-        if (sendThrows) {
-          throw PlatformException(code: 'send', message: 'not connected');
-        }
-        return sendSucceeds;
+      case 'setWheelParams':
+      case 'reZero':
+      case 'setPedals':
+      case 'setStreaming':
+        return true;
       default:
         throw StateError('unexpected method $method');
     }
@@ -66,6 +64,15 @@ void main() {
     await pump();
   }
 
+  void connectHost() {
+    bridge.handlePlatformEvent({
+      'event': 'connectionState',
+      'address': 'AA:BB:CC:DD:EE:FF',
+      'name': 'PC',
+      'state': 'connected',
+    });
+  }
+
   group('HidBridge state machine', () {
     test('permission denied → unregistered, no register call', () async {
       plugin.permissionGranted = false;
@@ -82,19 +89,30 @@ void main() {
       expect(bridge.state, HidState.unregistered);
     });
 
-    test('registration flow reaches registered, then host connection', () async {
+    test('registration flow reaches registered, then host connection arms the hot loop', () async {
       await startAndRegister();
       expect(bridge.state, HidState.registered);
       expect(plugin.count('register'), 1);
 
-      bridge.handlePlatformEvent({
-        'event': 'connectionState',
-        'address': 'AA:BB:CC:DD:EE:FF',
-        'name': 'Gaming PC',
-        'state': 'connected',
-      });
+      connectHost();
       expect(bridge.state, HidState.connected);
-      expect(bridge.hostName, 'Gaming PC');
+      expect(bridge.hostName, 'PC');
+      await pump();
+      expect(plugin.count('setStreaming'), 1, reason: 'connect arms the native sender');
+      expect((plugin.calls.last.$2 as Map)['enabled'], isTrue);
+    });
+
+    test('native streaming event promotes connected → streaming', () async {
+      await startAndRegister();
+      connectHost();
+      bridge.handlePlatformEvent({'event': 'streaming'});
+      expect(bridge.state, HidState.streaming);
+    });
+
+    test('streaming event while merely registered is ignored', () async {
+      await startAndRegister();
+      bridge.handlePlatformEvent({'event': 'streaming'});
+      expect(bridge.state, HidState.registered);
     });
 
     test('registered without a host discovers bonded hosts and connects', () async {
@@ -107,43 +125,9 @@ void main() {
       expect(bridge.hostAddress, '11:22:33:44:55:66');
     });
 
-    test('first send moves connected → streaming; identical input dedupes', () async {
-      await startAndRegister();
-      bridge.handlePlatformEvent({
-        'event': 'connectionState',
-        'address': 'AA:BB:CC:DD:EE:FF',
-        'name': 'PC',
-        'state': 'connected',
-      });
-
-      final first = await bridge.sendState(Ds4ReportState.neutral);
-      expect(first, isTrue);
-      expect(bridge.state, HidState.streaming);
-
-      final duplicate = await bridge.sendState(Ds4ReportState.neutral);
-      expect(duplicate, isFalse);
-      expect(plugin.count('sendReport'), 1);
-
-      final changed = await bridge.sendState(Ds4ReportState.neutral.copyWith(cross: true));
-      expect(changed, isTrue);
-      expect(plugin.count('sendReport'), 2);
-      expect(bridge.latencyStats.samples, 2);
-    });
-
-    test('sendState before a connection sends nothing', () async {
-      await startAndRegister();
-      expect(await bridge.sendState(Ds4ReportState.neutral), isFalse);
-      expect(plugin.count('sendReport'), 0);
-    });
-
     test('disconnect returns to registered and reconnects without restart', () async {
       await startAndRegister();
-      bridge.handlePlatformEvent({
-        'event': 'connectionState',
-        'address': 'AA:BB:CC:DD:EE:FF',
-        'name': 'PC',
-        'state': 'connected',
-      });
+      connectHost();
       bridge.handlePlatformEvent({
         'event': 'connectionState',
         'address': 'AA:BB:CC:DD:EE:FF',
@@ -171,6 +155,8 @@ void main() {
     test('app backgrounded unregister waits for resume, then re-registers', () async {
       await startAndRegister();
       bridge.appPaused();
+      await pump();
+      expect(plugin.count('setStreaming'), greaterThanOrEqualTo(1), reason: 'pause disarms the hot loop');
       bridge.handlePlatformEvent({'event': 'appStatus', 'registered': false});
       expect(bridge.state, HidState.unregistered);
       expect(plugin.count('register'), 1, reason: 'backgrounded: re-register waits for resume');
@@ -181,6 +167,20 @@ void main() {
 
       bridge.handlePlatformEvent({'event': 'appStatus', 'registered': true});
       expect(bridge.state, HidState.registered);
+    });
+
+    test('appResumed while linked re-arms the hot loop', () async {
+      await startAndRegister();
+      connectHost();
+      bridge.handlePlatformEvent({'event': 'streaming'});
+      final before = plugin.count('setStreaming');
+      bridge.appPaused();
+      await pump();
+      bridge.appResumed();
+      await pump();
+      expect(plugin.count('setStreaming'), greaterThan(before));
+      expect((plugin.calls.last.$2 as Map)['enabled'], isTrue, reason: 'resume re-arms while linked');
+      expect(bridge.state, HidState.streaming);
     });
 
     test('repeated foreground unregistration stops auto-retrying', () async {
@@ -197,51 +197,10 @@ void main() {
       expect(bridge.state, HidState.unregistered);
     });
 
-    test('a rejected send is not recorded as success and is re-sent later', () async {
-      await startAndRegister();
-      bridge.handlePlatformEvent({
-        'event': 'connectionState',
-        'address': 'AA:BB:CC:DD:EE:FF',
-        'name': 'PC',
-        'state': 'connected',
-      });
-
-      plugin.sendSucceeds = false;
-      final rejected = await bridge.sendState(Ds4ReportState.neutral);
-      expect(rejected, isFalse, reason: 'the stack refused the report');
-      expect(bridge.state, HidState.connected, reason: 'connection truth comes from events, not sends');
-      expect(bridge.latencyStats.samples, 0, reason: 'a rejected send has no meaningful latency');
-
-      plugin.sendSucceeds = true;
-      final retried = await bridge.sendState(Ds4ReportState.neutral);
-      expect(retried, isTrue, reason: 'the failed send must not poison the dedupe');
-      expect(bridge.latencyStats.samples, 1);
-    });
-
-    test('a thrown send marks the bridge errored and invalidates the dedupe', () async {
-      await startAndRegister();
-      bridge.handlePlatformEvent({
-        'event': 'connectionState',
-        'address': 'AA:BB:CC:DD:EE:FF',
-        'name': 'PC',
-        'state': 'connected',
-      });
-      await bridge.sendState(Ds4ReportState.neutral);
-
-      plugin.sendThrows = true;
-      expect(await bridge.sendState(Ds4ReportState.neutral.copyWith(cross: true)), isFalse);
-      expect(bridge.state, HidState.error);
-    });
-
     test('appStatus(registered) while streaming does not regress the state', () async {
       await startAndRegister();
-      bridge.handlePlatformEvent({
-        'event': 'connectionState',
-        'address': 'AA:BB:CC:DD:EE:FF',
-        'name': 'PC',
-        'state': 'connected',
-      });
-      await bridge.sendState(Ds4ReportState.neutral);
+      connectHost();
+      bridge.handlePlatformEvent({'event': 'streaming'});
       expect(bridge.state, HidState.streaming);
 
       bridge.handlePlatformEvent({'event': 'appStatus', 'registered': true});
@@ -274,19 +233,6 @@ void main() {
       expect(plugin.count('connect'), 3, reason: '3 bounded attempts, then give up');
     });
 
-    test('sendState while merely registered sends nothing', () async {
-      await startAndRegister();
-      bridge.handlePlatformEvent({
-        'event': 'connectionState',
-        'address': 'AA:BB:CC:DD:EE:FF',
-        'name': 'PC',
-        'state': 'disconnected',
-      });
-      await pump();
-      expect(await bridge.sendState(Ds4ReportState.neutral), isFalse);
-      expect(plugin.count('sendReport'), 0, reason: 'no reports before the profile is linked');
-    });
-
     test('host requests are logged, not lost', () async {
       bridge.handlePlatformEvent({
         'event': 'hostRequest',
@@ -304,6 +250,76 @@ void main() {
       final messages = bridge.log.entries.map((e) => e.message).join('\n');
       expect(messages, contains('registering'));
       expect(messages, contains('registered'));
+    });
+  });
+
+  group('HidBridge M2 commands', () {
+    test('setWheelParams forwards the parameter map', () async {
+      const params = WheelParams(
+        rangeDeg: 450,
+        deadzoneDeg: 2,
+        sensitivity: 1.5,
+        curve: 'soft',
+        axisMode: 'cradle',
+      );
+      await bridge.setWheelParams(params);
+      expect(plugin.count('setWheelParams'), 1);
+      final args = plugin.calls.last.$2 as Map;
+      expect(args['range'], 450);
+      expect(args['deadzone'], 2);
+      expect(args['sensitivity'], 1.5);
+      expect(args['curve'], 'soft');
+      expect(args['axisMode'], 'cradle');
+      expect(bridge.wheelParams, same(params));
+    });
+
+    test('reZero and setPedals reach the channel', () async {
+      await bridge.reZero();
+      await bridge.setPedals(255, 0);
+      expect(plugin.count('reZero'), 1);
+      expect(plugin.count('setPedals'), 1);
+      expect((plugin.calls.last.$2 as Map)['throttle'], 255);
+      expect((plugin.calls.last.$2 as Map)['brake'], 0);
+    });
+
+    test('bondedHosts parses getHosts', () async {
+      plugin.hosts = [
+        {'address': 'AA:BB', 'name': 'PC', 'state': 'disconnected'},
+      ];
+      final hosts = await bridge.bondedHosts();
+      expect(hosts, hasLength(1));
+      expect(hosts.single.address, 'AA:BB');
+      expect(hosts.single.name, 'PC');
+      expect(hosts.single.state, 'disconnected');
+    });
+
+    test('wheel stream updates the frame notifier', () async {
+      final controller = StreamController<Map<Object?, Object?>>.broadcast();
+      final bridgeWithWheel = HidBridge(
+        invoke: plugin.call,
+        eventStream: () => const Stream<Map<Object?, Object?>>.empty(),
+        wheelStream: () => controller.stream,
+        log: HidLog(),
+      );
+      await bridgeWithWheel.start();
+      controller.add({'angle': 123.5, 'avg': 2.0, 'p95': 4.0, 'n': 128, 'sensorHz': 248.0});
+      await pump();
+      final frame = bridgeWithWheel.wheelFrame.value;
+      expect(frame.angleDeg, 123.5);
+      expect(frame.avgMs, 2.0);
+      expect(frame.p95Ms, 4.0);
+      expect(frame.samples, 128);
+      expect(frame.sensorHz, 248.0);
+      await controller.close();
+      await bridgeWithWheel.dispose();
+    });
+
+    test('telemetry label formats when reports exist', () async {
+      const frame = WheelFrame(angleDeg: 1, avgMs: 1.234, p95Ms: 5.678, samples: 128, sensorHz: 249.1);
+      expect(frame.telemetryLabel, contains('n=128'));
+      expect(frame.telemetryLabel, contains('avg=1.23ms'));
+      expect(frame.telemetryLabel, contains('p95=5.68ms'));
+      expect(const WheelFrame(angleDeg: 0).telemetryLabel, contains('no reports'));
     });
   });
 }

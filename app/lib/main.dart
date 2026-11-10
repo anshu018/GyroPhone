@@ -3,9 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'hid/ds4_report.dart';
 import 'hid/hid_bridge.dart';
-import 'layouts/status_screen.dart';
+import 'layouts/wheel_screen.dart';
 
 void main() {
   runApp(const GyroPhoneApp());
@@ -27,10 +26,13 @@ class _GyroPhoneAppState extends State<GyroPhoneApp> with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
     const methods = MethodChannel('gyrophone/hid');
     const events = EventChannel('gyrophone/hid_events');
+    const wheel = EventChannel('gyrophone/wheel');
     _bridge = HidBridge(
       invoke: (method, [args]) => methods.invokeMethod(method, args),
       eventStream: () =>
           events.receiveBroadcastStream().map((event) => event as Map<Object?, Object?>),
+      wheelStream: () =>
+          wheel.receiveBroadcastStream().map((event) => event as Map<Object?, Object?>),
     );
     unawaited(_bridge.start());
   }
@@ -45,7 +47,10 @@ class _GyroPhoneAppState extends State<GyroPhoneApp> with WidgetsBindingObserver
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // The OS unregisters the HID app when we leave the foreground; the bridge
-    // re-registers on resume (docs/specs/M1-pair-as-ds4.md R2/R7).
+    // re-registers on resume (docs/specs/M1-pair-as-ds4.md R2/R7). Pause also
+    // disarms the native loop, which sends a neutral report while linked —
+    // the host never holds a held wheel or pedal from a backgrounded app
+    // (M2 spec R1).
     if (state == AppLifecycleState.resumed) {
       _bridge.appResumed();
       return;
@@ -54,10 +59,6 @@ class _GyroPhoneAppState extends State<GyroPhoneApp> with WidgetsBindingObserver
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       _bridge.appPaused();
-      // Focus loss must never leave a held button or displaced stick on the
-      // host (spec R5): release everything. Dedupe makes this a no-op when
-      // nothing is held.
-      unawaited(_bridge.sendState(Ds4ReportState.neutral));
     }
   }
 
@@ -66,7 +67,7 @@ class _GyroPhoneAppState extends State<GyroPhoneApp> with WidgetsBindingObserver
     return MaterialApp(
       title: 'GyroPhone',
       theme: ThemeData.dark(),
-      home: StatusScreen(bridge: _bridge),
+      home: WheelScreen(bridge: _bridge),
     );
   }
 }

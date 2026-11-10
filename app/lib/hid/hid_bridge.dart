@@ -1,10 +1,13 @@
 import 'dart:async';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show MissingPluginException, PlatformException;
 
-import 'ds4_report.dart';
 import 'hid_log.dart';
+import 'wheel_frame.dart';
+
+/// The native wheel event stream (`gyrophone/wheel`): raw event maps.
+typedef WheelEventStream = Stream<Map<Object?, Object?>> Function();
 
 /// Connection lifecycle of the emulated DS4 (docs/specs/M1-pair-as-ds4.md R7).
 enum HidState {
@@ -17,42 +20,51 @@ enum HidState {
   error;
 
   bool get isLinked => this == connected || this == streaming;
-}
 
-/// Rolling latency statistics for the input path (spec R9).
-class LatencyStats {
-  const LatencyStats({required this.samples, required this.avgMs, required this.p95Ms});
-
-  final int samples;
-  final double avgMs;
-  final double p95Ms;
-
-  @override
-  String toString() => 'n=$samples avg=${avgMs.toStringAsFixed(2)}ms p95=${p95Ms.toStringAsFixed(2)}ms';
+  /// Human label for the status chip (the loudest element, UIUX constraint).
+  String get label => switch (this) {
+        uninitialized => 'starting…',
+        unregistered => 'not registered',
+        registering => 'registering…',
+        registered => 'pair from the PC',
+        connected => 'connected',
+        streaming => 'streaming',
+        error => 'error',
+      };
 }
 
 /// Dart side of the HID platform bridge: owns the connection state machine,
-/// dedupes and sends input reports, and records input-path latency.
+/// pushes wheel-model settings and pedal events to the native hot loop, and
+/// republishes the native wheel stream for the UI.
 ///
-/// The platform interaction is injected as functions so the state machine is
-/// unit-testable without the Flutter test binding. [start] wires the real
-/// channels; tests drive [handlePlatformEvent] and inject a fake [invoke].
-class HidBridge {
+/// The input reports themselves are owned by the native hot loop (ADR-012):
+/// Dart never packs or sends report bytes. The platform interaction is
+/// injected as functions so the state machine is unit-testable without the
+/// Flutter test binding. [start] wires the real channels; tests drive
+/// [handlePlatformEvent] and inject a fake [invoke].
+class HidBridge extends ChangeNotifier {
   HidBridge({
     required this._invoke,
     required this._eventStream,
+    this._wheelStream,
     HidLog? log,
     this.connectRetryDelay = const Duration(seconds: 2),
-  }) : log = log ?? HidLog();
-
-  static const int _latencySampleCapacity = 128;
+  })  : log = log ?? HidLog();
 
   final Future<dynamic> Function(String method, [dynamic args]) _invoke;
   final Stream<Map<Object?, Object?>> Function() _eventStream;
+  final WheelEventStream? _wheelStream;
   final HidLog log;
-  final Ds4ReportPacker _packer = Ds4ReportPacker();
-  final List<double> _latencySamples = [];
   StreamSubscription<Map<Object?, Object?>>? _eventSubscription;
+  StreamSubscription<Map<Object?, Object?>>? _wheelSubscription;
+
+  /// Live fused angle + hot-loop telemetry, republished for the UI (≤60 Hz).
+  final ValueNotifier<WheelFrame> wheelFrame =
+      ValueNotifier<WheelFrame>(WheelFrame.neutral);
+
+  /// Wheel-model parameters; mutations apply live over the channel (M2 spec
+  /// R3/R8) — no persistence in M2, the settings screen is Ver-1 Step 7.
+  WheelParams wheelParams = WheelParams.defaults;
 
   /// Delay between device-initiated connect attempts (injectable for tests).
   final Duration connectRetryDelay;
@@ -73,22 +85,9 @@ class HidBridge {
 
   HidState get state => _state;
 
-  /// Input-path latency of the most recent sends, oldest first (ms).
-  List<double> get latencySamples => List.unmodifiable(_latencySamples);
-
-  LatencyStats get latencyStats {
-    if (_latencySamples.isEmpty) {
-      return const LatencyStats(samples: 0, avgMs: 0, p95Ms: 0);
-    }
-    final sorted = [..._latencySamples]..sort();
-    final avg = _latencySamples.reduce((a, b) => a + b) / _latencySamples.length;
-    final p95Index = (sorted.length * 0.95).ceil() - 1;
-    return LatencyStats(samples: sorted.length, avgMs: avg, p95Ms: sorted[p95Index]);
-  }
-
   /// Requests permissions, registers with the DS4 SDP record, and starts
   /// listening for platform events. Safe to call again after a failure —
-  /// that is what the status screen's retry button does.
+  /// that is what the connection sheet's retry does.
   Future<void> start() async {
     _eventSubscription ??= _eventStream().listen(handlePlatformEvent, onError: (Object e) {
       log.error('event stream error', e);
@@ -98,13 +97,21 @@ class HidBridge {
       unawaited(_eventSubscription?.cancel());
       _eventSubscription = null;
     });
+    _wheelSubscription ??= _wheelStream?.call().listen(
+      (event) => wheelFrame.value = WheelFrame.fromMap(event),
+      onError: (Object e) => log.error('wheel stream error', e),
+    );
     await _ensurePermissionsAndRegister();
   }
 
+  @override
   Future<void> dispose() async {
     _hostConnectTimer?.cancel();
     await _eventSubscription?.cancel();
     _eventSubscription = null;
+    await _wheelSubscription?.cancel();
+    _wheelSubscription = null;
+    super.dispose();
   }
 
   /// Called by the app lifecycle observer (main.dart).
@@ -114,11 +121,96 @@ class HidBridge {
       log.state('app resumed — re-registering');
       _ensurePermissionsAndRegister();
     }
+    if (_state.isLinked) {
+      unawaited(setStreaming(true));
+    }
   }
 
   /// Called by the app lifecycle observer (main.dart).
   void appPaused() {
     appInForeground = false;
+    // Disarm the native loop: it sends a neutral report while linked, so the
+    // host never holds a held wheel or pedal from a backgrounded app
+    // (M2 spec R1, extends the M1 focus-loss rule).
+    unawaited(setStreaming(false));
+  }
+
+  /// Applies wheel parameters live — no re-registration, no reconnect
+  /// (M2 spec R1/R8).
+  Future<void> setWheelParams(WheelParams params) async {
+    wheelParams = params;
+    try {
+      await _invoke('setWheelParams', params.toChannelArgs());
+    } on PlatformException catch (e) {
+      log.error('setWheelParams failed', e);
+    } on MissingPluginException {
+      log.state('setWheelParams skipped — platform channel unavailable');
+    }
+  }
+
+  /// Re-zero: the current grip becomes "straight" (M2 spec R3).
+  Future<void> reZero() async {
+    try {
+      await _invoke('reZero');
+      log.state('wheel re-zeroed');
+    } on PlatformException catch (e) {
+      log.error('reZero failed', e);
+    } on MissingPluginException {
+      log.state('reZero skipped — platform channel unavailable');
+    }
+  }
+
+  /// Pedal hold state (0 released → 255 full); merged into the owned report
+  /// by the native packer (M2 spec R5).
+  Future<void> setPedals(int throttle, int brake) async {
+    try {
+      await _invoke('setPedals', {'throttle': throttle, 'brake': brake});
+    } on PlatformException catch (e) {
+      log.error('setPedals failed', e);
+    } on MissingPluginException {
+      log.state('setPedals skipped — platform channel unavailable');
+    }
+  }
+
+  /// Arms/disarms the native sender. Arming on connect; disarming sends a
+  /// neutral report while linked (focus-loss rule, M2 spec R1).
+  Future<void> setStreaming(bool enabled) async {
+    try {
+      await _invoke('setStreaming', {'enabled': enabled});
+    } on PlatformException catch (e) {
+      log.error('setStreaming failed', e);
+    } on MissingPluginException {
+      log.state('setStreaming skipped — platform channel unavailable');
+    }
+  }
+
+  /// Bonded hosts for the connection sheet (M1 task 11 fold-in).
+  Future<List<BondedHost>> bondedHosts() async {
+    try {
+      final hosts = await _invoke('getHosts') as List<Object?>? ?? const [];
+      return hosts
+          .map((host) => BondedHost.fromMap(host as Map<Object?, Object?>))
+          .toList();
+    } on PlatformException catch (e) {
+      log.error('getHosts failed', e);
+      return const [];
+    } on MissingPluginException {
+      log.state('getHosts skipped — platform channel unavailable');
+      return const [];
+    }
+  }
+
+  /// Device-initiated connect to a bonded host ("paired before, profile added
+  /// after" — M1 spec task 11).
+  Future<void> connectTo(String address) async {
+    try {
+      await _invoke('connect', {'address': address});
+      log.state('connect requested: $address');
+    } on PlatformException catch (e) {
+      log.error('connect($address) failed', e);
+    } on MissingPluginException {
+      log.state('connect skipped — platform channel unavailable');
+    }
   }
 
   /// Asks the OS to make the phone discoverable (system consent dialog over
@@ -135,54 +227,6 @@ class HidBridge {
     }
   }
 
-  /// Packs and sends [state] if it differs from the last sent input.
-  /// Returns true when a report went out. Measured end-to-end over the
-  /// platform channel (touch → report handed to the BT stack), which is the
-  /// phone-attributable portion of the <10 ms budget (spec R9).
-  Future<bool> sendState(Ds4ReportState state) async {
-    if (!_state.isLinked) return false;
-    if (hostAddress == null) return false;
-
-    // Fresh buffer per send: the packer reuses its scratch, but a second
-    // sendState while this invoke is in flight must not mutate bytes the codec
-    // may still be encoding. Touch-rate traffic makes the copy irrelevant;
-    // the no-allocation invariant binds the M2 sensor hot path.
-    if (!_packer.packIfChanged(state, _sendBuffer)) return false;
-    final payload = Uint8List.fromList(_sendBuffer);
-
-    final watch = Stopwatch()..start();
-    try {
-      final sent = await _invoke('sendReport', {
-        'address': hostAddress,
-        'id': Ds4ReportPacker.reportIdSmall,
-        'data': payload,
-      }) as bool? ?? false;
-      if (!sent) {
-        // The stack refused the report (Bluetooth dropped mid-send, stale
-        // proxy). The dedupe must not believe this input was delivered.
-        _packer.invalidateLastSent();
-        log.bluetooth('sendReport rejected by the stack');
-        return false;
-      }
-      watch.stop();
-      _recordLatency(watch.elapsedMicroseconds / 1000.0);
-      if (_state == HidState.connected) {
-        _transition(HidState.streaming, 'first report sent — streaming');
-      }
-      return true;
-    } on PlatformException catch (e) {
-      _packer.invalidateLastSent();
-      _transition(HidState.error, 'sendReport failed: ${e.code}');
-      return false;
-    } on MissingPluginException {
-      _packer.invalidateLastSent();
-      _transition(HidState.unregistered, 'platform channel unavailable during send');
-      return false;
-    }
-  }
-
-  final Uint8List _sendBuffer = Uint8List(Ds4ReportPacker.payloadSize);
-
   /// Entry point for platform events; public for tests.
   void handlePlatformEvent(Map<Object?, Object?> event) {
     switch (event['event'] as String?) {
@@ -194,6 +238,10 @@ class HidBridge {
         _onHostRequest(event);
       case 'btState':
         _onBtState(event['state'] as String?);
+      case 'streaming':
+        if (_state == HidState.connected) {
+          _transition(HidState.streaming, 'native hot loop is streaming');
+        }
       default:
         log.error('unknown platform event: $event');
     }
@@ -274,9 +322,9 @@ class HidBridge {
     }
     switch (platformState) {
       case 'connected':
-        // Force a fresh report on (re)connect — the host's cached state is
-        // whatever it last saw; a real DS4 sends a full report here.
-        _packer.invalidateLastSent();
+        // Arm the native loop: it gates on linked+armed and dedupes, so
+        // arming here is idempotent and safe before any host reads.
+        unawaited(setStreaming(true));
         _hostConnectAttempts = 0;
         _hostConnectTimer?.cancel();
         _transition(HidState.connected, 'host connected: ${name ?? address}');
@@ -375,16 +423,27 @@ class HidBridge {
     }
   }
 
-  void _recordLatency(double ms) {
-    if (_latencySamples.length == HidBridge._latencySampleCapacity) {
-      _latencySamples.removeAt(0);
-    }
-    _latencySamples.add(ms);
-  }
-
   void _transition(HidState next, String reason) {
     if (_state == next) return;
     _state = next;
     log.state('$_state — $reason');
+    // The UI (wheel screen chrome) rebuilds on transitions only — never per
+    // sensor frame.
+    notifyListeners();
   }
+}
+
+/// A bonded host from `getHosts`, for the connection sheet.
+class BondedHost {
+  const BondedHost({required this.address, required this.name, required this.state});
+
+  factory BondedHost.fromMap(Map<Object?, Object?> map) => BondedHost(
+        address: map['address'] as String? ?? '',
+        name: map['name'] as String?,
+        state: map['state'] as String? ?? 'unknown',
+      );
+
+  final String address;
+  final String? name;
+  final String state;
 }
