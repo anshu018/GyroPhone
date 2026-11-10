@@ -134,6 +134,8 @@ Public searches surfaced no Kobotix patent filings and no litigation concerning 
 
 - **iOS** exposes no Bluetooth HID *device* API, so Tier 1 is Android-only in v1 (ADR-005).
 - **Windows** requires no drivers on the Bluetooth-HID path — that is the point of ADR-001.
+- **Android 12+ rate-limits motion sensors** (accelerometer, gyroscope, geomagnetic field): for apps targeting API 31+, `registerListener` delivery is capped at 200 Hz, and requesting a higher rate without the `HIGH_SAMPLING_RATE_SENSORS` permission (normal, install-time) raises `SecurityException`. A user's mic-privacy toggle caps sensors regardless of the permission. GyroPad declares the permission from M2. ([Android sensor rate-limiting](https://developer.android.com/guide/topics/sensors/sensors_overview#sensors-rate-limiting), [behavior changes](https://developer.android.com/about/versions/12/behavior-changes-12), verified 2026-11-11 while writing the [M2 spec](specs/M2-wheel.md).)
+- **Android sensor coordinates follow the device's natural orientation** (portrait on our phones), never the app's screen orientation — the axes are not swapped when the screen rotates, so frame-sensitive math must use the sensor frame ([sensor coordinate system](https://developer.android.com/guide/topics/sensors/sensors_overview#sensors-coord), verified 2026-11-11 while writing the [M2 spec](specs/M2-wheel.md)).
 
 ### Android Bluetooth HID device mode — transport research for M1 (2026-11-07)
 

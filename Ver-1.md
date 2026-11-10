@@ -112,7 +112,7 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 
 ## Step 3 — Sensor pipeline (fusion + wheel model)
 
-**Status: NOT STARTED** · Milestone: M2 · Depends on: 2
+**Status: IN PROGRESS** (2026-11-11: M2 spec written at `docs/specs/M2-wheel.md`, awaiting user approval; Step 2's disposition — obsolete, residue folded into Steps 3–5 — is recorded in that spec) · Milestone: M2 · Depends on: 2
 
 **Goal:** real steering — drift-free wheel angle and motion data at sensor rate.
 
@@ -263,3 +263,4 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 | 2026-11-07 | Step 1 spike implemented: DS4 SDP + byte-exact 356-byte BT descriptor (independently verified), HidPlugin.kt, Dart state machine + 0x01 packer + status screen; analyze zero findings, 23/23 Dart tests, 6/6 Kotlin descriptor tests, APK builds; NDK 28.2 installed; device tests next |
 | 2026-11-08 | Device test on Nord 5 (Android 16): control experiment (blugaemand) proved the platform; our app's payload iterated to working state — in-app discoverable request + DS4 small-report descriptor (79 B) + device-initiated reconnect; **transport proven: pairs, connects, sticks+buttons correct in joy.cpl, Steam lists the controller**. Findings recorded in spec Pitfalls + RESEARCH.md; latency readout, Steam verdict, and Nothing Phone 1 test remain |
 | 2026-11-08 (late) | **M1 COMPLETE.** Nothing Phone 1 (Android 15) paired first-try with the final flow, inputs correct, own "Wireless Controller" name; latency recorded (avg 7.85 ms within the <10 ms budget, p95 23.93 ms flagged for Step 2); Steam lists both phones as "Sony Computer Entertainment Wireless Controller", its wizard ran with PlayStation-style prompts. All 6 ROADMAP M1 criteria ticked; Step 1 → DONE. Next: Step 2 (DS4 hardening) |
+| 2026-11-11 | M2 spec written (`docs/specs/M2-wheel.md`) with the corrected architecture — fused steering angle rides report `0x01` byte 0 (X usage, no descriptor change); Steam classification irrelevant to the wheel. User decisions: native Kotlin sensor hot loop (report ownership moves native), full cockpit wheel layout v1. Step 2 closed as obsolete by the spec; Step 3 → IN PROGRESS, awaiting spec approval before code |

@@ -2,10 +2,10 @@
 
 The living snapshot. Read this first, every session, human or agent. Update it at the end of every session and after every milestone (contract in [AGENTS.md](AGENTS.md)).
 
-**Last updated:** 2026-11-08 (late)
-**Current phase:** Phase 0 — **M1 complete** (all six acceptance criteria passed on two devices)
-**Current goal:** none in flight — M1 closed
-**Next action:** Ver-1 Step 2 (DS4 hardening): write its spec additions, first task = Steam click-through verdict (DS4 vs generic)
+**Last updated:** 2026-11-11
+**Current phase:** Phase 0 — M1 complete; **M2 spec written, awaiting approval**
+**Current goal:** get `docs/specs/M2-wheel.md` approved — no code before that
+**Next action:** user reviews the M2 spec; implementation follows its task list on explicit approval
 **Blockers:** none
 
 ## Completed
@@ -22,6 +22,7 @@ The living snapshot. Read this first, every session, human or agent. Update it a
   - Steam lists both phones simultaneously as "Sony Computer Entertainment Wireless Controller"; its mapping wizard ran with PlayStation-style input names (L3) — definitive DS4-vs-generic classification is Step 2's first task
 - Platform findings recorded in the spec's Pitfalls + [RESEARCH.md](docs/RESEARCH.md): stale bonds poison pairing; app must be foreground during pairing (in-app discoverable request); full 356-byte DS4 descriptor fails to install on this stack↔Windows pair (M1 uses the DS4's own 79-byte small-report descriptor — wire-faithful); subclass 0x08 exonerated; registration-slot conflicts; Windows name cache; adb quirks (logcat filtering, wireless-pairing VPN address)
 - ROADMAP M1 fully ticked; Ver-1 Step 1 marked DONE
+- **M2 spec written** (2026-11-11, `docs/specs/M2-wheel.md`): axis path via report `0x01` byte 0 (X usage, no descriptor change), native Kotlin sensor hot loop (user decision), full cockpit layout v1 (user decision), Ver-1 Step 2 closed as obsolete, `HIGH_SAMPLING_RATE_SENSORS` fact verified against the Android docs and recorded in RESEARCH.md. Presented for approval.
 
 ## In progress
 
@@ -29,10 +30,9 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 
 ## Next, in order
 
-1. **Write the M2 spec (`docs/specs/M2-wheel.md`)** with the corrected architecture: the wheel does NOT depend on Steam classification — phone-side sensor fusion (rotation vector + gyro → wheel angle) is sent as a plain steering AXIS in report 0x01, which racing games (BeamNG, Assetto Corsa) bind natively like any DirectInput wheel. Steam-Input gyro / DS4 classification only affects the *extras* (universal gyro mapping, M3 rumble) — those stay on the decision menu.
-2. Get M2 spec approved → implement (sensor pipeline, wheel model, wheel layout).
-3. Phone-side connect UI for bonded hosts (spec task 11, user-approved).
-4. Rumble (M3) decision deferred; its option menu no longer includes the full-descriptor disguise (declined by the user, see Open questions).
+1. **Get the M2 spec approved** (`docs/specs/M2-wheel.md` — written 2026-11-11 with the corrected architecture: sensor fusion → wheel angle → plain steering AXIS in report `0x01`, native Kotlin hot loop, full cockpit layout v1; Steam classification irrelevant to the wheel).
+2. On approval, implement per the spec's task list (sensor pipeline, wheel model, native report owner, wheel layout, connection sheet).
+3. Rumble (M3) decision deferred; its option menu no longer includes the full-descriptor disguise (declined by the user, see Open questions).
 
 ## Open questions
 
@@ -41,7 +41,8 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 
 ## Gotchas for next session
 
-- **All M1 pairing pitfalls live in [the spec's Pitfalls](docs/specs/M1-pair-as-ds4.md) — read them before touching Bluetooth code.** The big three: stale bonds poison pairing (remove both ends, re-pair); the registered app must be foreground during pairing (in-app "Make discoverable" handles it); the full DS4 descriptor is registered for Step 2 only — M1 uses the small one.
+- **All M2 spec decisions live in the spec** — read `docs/specs/M2-wheel.md` before any M2 code. The two user decisions of 2026-11-11: the sensor hot loop is native Kotlin (report ownership moves off Dart), and wheel layout v1 is the full cockpit (pedals included). `HIGH_SAMPLING_RATE_SENSORS` goes in the manifest from the first M2 build (Android 12+ rate-limits/throws otherwise — see RESEARCH.md platform constraints).
+- **All M1 pairing pitfalls live in [the spec's Pitfalls](docs/specs/M1-pair-as-ds4.md) — read them before touching Bluetooth code.** The big three: stale bonds poison pairing (remove both ends, re-pair); the registered app must be foreground during pairing (in-app "Make discoverable" handles it); the 79-byte small descriptor is the shipping artifact (the full 356-byte one is kept byte-exact as reference only).
 - Only one app can hold the HID registration per phone; force-stop doesn't reliably release it — toggle Bluetooth to clear (`adb shell svc bluetooth disable/enable`).
 - `adb logcat` tag filtering flakes on this machine; use `adb shell "logcat -d | grep …"`. The Nord 5 works over USB adb; the Nothing Phone 1 works over **wireless** adb (paired; its dialog shows the VPN IP when its VPN is on — use `adb mdns services` for the real address).
 - Latency display: `n=` pins at 128 once the rolling window is full — by design.
