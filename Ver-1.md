@@ -19,8 +19,8 @@ The detailed build plan for **Version 1.0** — the GyroPhone Android app that t
 | 0 | Project scaffold | M1 prep | — | DONE (device install check folds into Step 1 device tests) |
 | 1 | HID transport spike (phone pairs as DS4) | M1 | 0 | DONE |
 | 2 | DS4 hardening (byte-faithful report layer) | M2 prep | 1 | NOT STARTED |
-| 3 | Sensor pipeline (fusion + wheel model) | M2 | 2 | NOT STARTED |
-| 4 | Wheel layout v1 | M2 | 3 | NOT STARTED |
+| 3 | Sensor pipeline (fusion + wheel model) | M2 | 2 | IN PROGRESS (code + tests done 2026-11-11; device tests remain) |
+| 4 | Wheel layout v1 | M2 | 3 | IN PROGRESS (code + tests done 2026-11-11; device tests remain) |
 | 5 | Haptic engine (rumble replay) | M3 | 2 | NOT STARTED |
 | 6 | Gamepad layout + layout switcher | M3 | 4 | NOT STARTED |
 | 7 | Settings + persistence | M3 | 4, 5 | NOT STARTED |
@@ -112,18 +112,19 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 
 ## Step 3 — Sensor pipeline (fusion + wheel model)
 
-**Status: IN PROGRESS** (2026-11-11: M2 spec approved by the user; implementation started — Kotlin math core first) · Milestone: M2 · Depends on: 2
+**Status: IN PROGRESS** (2026-11-11: spec approved; code complete — fusion/model/packer/hot loop/wheel screen all land with JVM+Dart tests; device tests remain) · Milestone: M2 · Depends on: 2
 
-**Goal:** real steering — drift-free wheel angle and motion data at sensor rate.
+**Goal:** real steering — drift-free wheel angle at sensor rate, natively (ADR-012; the 0x11 motion block is out per the M2 spec's Step-2 disposition).
 
 **Tasks:**
-- [ ] Write the M2 spec (`docs/specs/M2-wheel.md`) — user approval first
-- [ ] `SensorFusionService`: rotation vector (drift correction) + gyroscope (rate) fused into the wheel angle; sensor registered at ≥100 Hz (`SENSOR_DELAY_FASTEST`-class, not `GAME`)
-- [ ] `WheelModel`: steering-axis choice (gravity-aware default + manual override), configurable range up to 900°, deadzone, response curve, re-zero
-- [ ] Populate the motion block with real fused values at the report rate
-- [ ] Unit tests: fusion math, range/clamp/curve/deadzone, re-zero behavior (no allocations in the hot loop)
+- [x] Write the M2 spec (`docs/specs/M2-wheel.md`) — approved 2026-11-11
+- [x] Native sensor fusion: gyro (fast path) + rotation vector (drift correction) fused into the wheel angle; sensors registered at `SENSOR_DELAY_FASTEST` with `HIGH_SAMPLING_RATE_SENSORS` declared (`SensorFusion.kt`)
+- [x] `WheelModel`: gravity-aware axis (auto + manual override), range up to 900°, deadzone (full lock preserved), sensitivity, response curve, re-zero
+- [x] Steering + pedals ride report `0x01` (byte 0 steering, bytes 7/8 pedals) via the native single owner `Ds4InputPacker` — the 0x11 motion-block task above is obsolete by the M2 spec's Step-2 disposition
+- [x] Unit tests: fusion scenarios, wheel-model mapping (monotonic/symmetric/byte-exact), packer goldens — 38 Kotlin JVM tests
+- [ ] Device tests: joy.cpl sweep, BeamNG/AC binding + drive, 10-min drift check, sensor-path latency vs <10 ms, both devices
 
-**Exit when:** ROADMAP M2 acceptance criteria pass — Steam receives gyro, template config steers a racing game, no manual re-zero needed in a 10-minute session.
+**Exit when:** ROADMAP M2 acceptance criteria pass — the wheel steers a racing game bound natively, no manual re-zero in a 10-minute session, latency recorded.
 
 **Pitfalls (do not):**
 - Do not use the default sensor delay — `SENSOR_DELAY_GAME` is ~50 Hz; steering needs ≥100 Hz.
@@ -135,14 +136,14 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 
 ## Step 4 — Wheel layout v1
 
-**Status: NOT STARTED** · Milestone: M2 · Depends on: 3
+**Status: IN PROGRESS** (2026-11-11: schema + engine + cockpit screen code complete with tests; on-device sync check remains) · Milestone: M2 · Depends on: 3
 
 **Goal:** a usable racing cockpit screen — functional first, styling temporary ([docs/UIUX.md](docs/UIUX.md) interim rule).
 
 **Tasks:**
-- [ ] Define the declarative layout schema (per [ADR-011](docs/DECISIONS.md)) in the M2 spec: widget types, positions, HID bindings — **the schema is the spec; the wheel is its first instance**
-- [ ] Layout engine renders the schema; wheel arc mirrors the real angle at sensor rate (bypass animation curves)
-- [ ] Re-zero button, connection status, minimal debug settings (range/sensitivity) on-screen
+- [x] Define the declarative layout schema (per [ADR-011](docs/DECISIONS.md)) in the M2 spec: widget types, positions, HID bindings — **the schema is the spec; the wheel is its first instance** (`lib/layouts/schema.dart`, `wheel_layout.dart`)
+- [x] Layout engine renders the schema; wheel arc mirrors the real angle at the ≤60 Hz UI stream rate (bypass animation curves) — pedals, re-zero, status chip, telemetry all from the definition
+- [x] Re-zero button, connection status (+ bonded-host Connect, M1 task 11), minimal settings (range/deadzone/sensitivity/curve/axis) on-screen
 - [ ] Verify the on-screen wheel stays in sync under 10-minute play (no drift between feel and render)
 
 **Exit when:** the user drives BeamNG/Assetto Corsa with the phone wheel and the on-screen wheel matches reality.
@@ -264,3 +265,4 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 | 2026-11-08 | Device test on Nord 5 (Android 16): control experiment (blugaemand) proved the platform; our app's payload iterated to working state — in-app discoverable request + DS4 small-report descriptor (79 B) + device-initiated reconnect; **transport proven: pairs, connects, sticks+buttons correct in joy.cpl, Steam lists the controller**. Findings recorded in spec Pitfalls + RESEARCH.md; latency readout, Steam verdict, and Nothing Phone 1 test remain |
 | 2026-11-08 (late) | **M1 COMPLETE.** Nothing Phone 1 (Android 15) paired first-try with the final flow, inputs correct, own "Wireless Controller" name; latency recorded (avg 7.85 ms within the <10 ms budget, p95 23.93 ms flagged for Step 2); Steam lists both phones as "Sony Computer Entertainment Wireless Controller", its wizard ran with PlayStation-style prompts. All 6 ROADMAP M1 criteria ticked; Step 1 → DONE. Next: Step 2 (DS4 hardening) |
 | 2026-11-11 | M2 spec written (`docs/specs/M2-wheel.md`) with the corrected architecture — fused steering angle rides report `0x01` byte 0 (X usage, no descriptor change); Steam classification irrelevant to the wheel. User decisions: native Kotlin sensor hot loop (report ownership moves native), full cockpit wheel layout v1. Step 2 closed as obsolete by the spec; Step 3 → IN PROGRESS, awaiting spec approval before code |
+| 2026-11-11 (later) | **Spec APPROVED; M2 code complete in one session.** 4 commits: docs/ADR-012 (`fec713d`), Kotlin math core with 38 JVM tests — tests caught a 100× gyro-integration overshoot and a deadzone full-lock bug pre-device (`72e0ffc`), native hot loop in HidPlugin + HIGH_SAMPLING_RATE_SENSORS (`2dd319b`), wheel cockpit UI + schema/engine + bridge commands + Dart send-path retirement, 23/23 Dart tests (`15834a6`). Steps 3–4 IN PROGRESS: device tests remain (joy.cpl sweep, game bind, 10-min drift, latency, second device) |

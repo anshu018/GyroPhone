@@ -22,13 +22,37 @@ class WheelScreen extends StatefulWidget {
   State<WheelScreen> createState() => _WheelScreenState();
 }
 
-class _WheelScreenState extends State<WheelScreen> {
+class _WheelScreenState extends State<WheelScreen> with WidgetsBindingObserver {
   /// Local settings state, live-applied; persistence is M3 (Ver-1 Step 7).
   WheelParams _params = WheelParams.defaults;
 
   /// Currently held pedal targets ('r2'/'l2'); both bytes re-merged on every
   /// change so releasing one pedal never forgets the other (M2 spec R5).
   final Set<String> _heldPedals = {};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // The bridge disarms the native loop on pause (neutral report); the local
+    // press state must clear with it, or the next pedal press would re-merge a
+    // phantom held pedal (M1 stuck-input lesson, M2 spec R1/R5).
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _heldPedals.clear();
+    }
+  }
 
   void _onHold(HidTarget target, bool pressed) {
     switch (target) {
@@ -41,14 +65,6 @@ class _WheelScreenState extends State<WheelScreen> {
       case SteeringAxis():
         widget.bridge.log.error('steering axis is sensor-driven; hold ignored');
     }
-  }
-
-  /// Hold buttons must not survive a focus loss as pressed pedals (M1
-  /// lesson): clear the local set and release over the channel.
-  void _releaseAllPedals() {
-    if (_heldPedals.isEmpty) return;
-    _heldPedals.clear();
-    unawaited(widget.bridge.setPedals(0, 0));
   }
 
   void _openSettings() {
@@ -103,11 +119,5 @@ class _WheelScreenState extends State<WheelScreen> {
         ),
       ),
     );
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _releaseAllPedals(); // no-op unless a sheet closed mid-hold
   }
 }

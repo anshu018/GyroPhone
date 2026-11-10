@@ -35,32 +35,32 @@ flowchart LR
 
 ### Components
 
-| Module | Layer | Responsibility | Key files (planned) |
-|--------|-------|----------------|---------------------|
-| `sensors/` | Dart | Listen rotation vector + gyroscope; produce the wheel angle and the 6-axis motion triple at sensor rate | `SensorFusionService`, `WheelModel` |
-| `hid/` (Dart) | Dart | Platform-channel bridge and connection state machine: unpaired → registered → connected → streaming → error | `HidBridge` |
-| `hid/` (native) | Kotlin | DS4 emulation: SDP app record, HID report descriptor, input-report packing, output-report reception over `BluetoothHidDevice` (API 28+) | `HidPlugin.kt` |
-| `haptics/` | Dart | Map rumble bytes (and later car telemetry) to `VibrationEffect` waveforms; rate-limit; degrade gracefully without amplitude control | `HapticEngine` |
-| `layouts/` | Flutter UI | Wheel, gamepad, settings, connection screens; zero-latency local rendering of input state | per-screen files |
+| Module | Layer | Responsibility | Key files |
+|--------|-------|----------------|-----------|
+| `sensors/` (native) | Kotlin | Sensor hot loop (ADR-012): listen gyro + rotation vector at the fastest rate; complementary fusion into the wheel angle; wheel model (range, deadzone, sensitivity, curve, re-zero); publish the fused angle to Dart at ≤60 Hz | `SensorFusion.kt`, `WheelModel.kt` |
+| `hid/` (Dart) | Dart | Platform-channel bridge and connection state machine: unpaired → registered → connected → streaming → error; wheel settings + pedal commands to the native owner; wheel-stream republish for the UI | `HidBridge`, `wheel_frame.dart` |
+| `hid/` (native) | Kotlin | DS4 emulation: SDP app record, HID report descriptor, the single input-report owner (packing, counter, dedupe, GET_REPORT cache), ~120 Hz sender tick, output-report reception over `BluetoothHidDevice` (API 28+) | `HidPlugin.kt`, `Ds4InputPacker.kt` |
+| `haptics/` | Dart→Kotlin | Map rumble bytes to `VibrationEffect` waveforms; rate-limit; degrade gracefully without amplitude control (M3) | `HapticEngine` |
+| `layouts/` | Flutter UI | Layout engine rendering declarative layout definitions (ADR-011): wheel layout v1, connection/settings sheets; zero-latency local rendering of input state | `schema.dart`, `layout_engine.dart`, `wheel_layout.dart`, `wheel_screen.dart` |
 
 ### The DS4 emulation contract
 
-The emulated controller must behave like a real DualShock 4 or Steam and games will misread it. The binding rules:
+The emulated controller must behave like a real DS4 or games will misread it. The binding rules (updated 2026-11-11 with the M2 spec — the `0x11` motion path is out, see below):
 
-- **Input report `0x11`** (the 78-byte full report) carries: left/right stick bytes (unsigned, centered at 128), button/trigger bit fields, the 6-axis motion block (accelerometer XYZ, gyroscope XYZ — signed 16-bit little-endian), a timestamp, and the battery nibble. The report descriptor declaring this map is the community-documented DS4 descriptor; the full byte layout is specified in the M1 spec (`docs/specs/`) and in code comments, not duplicated here.
-- **Report-mode behavior:** a real DS4 sends the small input report `0x01` (10 bytes, standard gamepad usages) until the host reads feature `0x02` (calibration), then switches to `0x11`. The app replicates this exactly: `0x01` feeds Windows' in-box HID stack (which parses only the standard usages), the `0x11` switch feeds a Steam DS4 path.
-- **Output report `0x11`** (78 bytes over Bluetooth) carries the two rumble motor intensities set by the game. `0x05` is the USB descriptor's output report — it does not exist on the Bluetooth path. `HidPlugin.kt` receives output reports via the `onInterruptData` callback (interrupt channel) or `onSetReport` (control channel) and forwards them to the `HapticEngine`.
-- **Host identity limit:** the phone advertises its own USB VID/PID in the SDP Device-ID record (apps cannot set Sony's `054C:05C4`). Windows is unaffected; whether Steam classifies the device as a DS4 is measured in M1 and recorded in the spec's open questions — if it does not, M2's gyro path needs a user decision (see [RESEARCH.md](RESEARCH.md)).
-- **Motion block semantics:** gyro values are angular rates; the app integrates them (with the fused rotation vector as drift correction) into the wheel angle. Sticks and buttons map 1:1 from `WheelModel` and layout state.
-- **Battery nibble** reports the phone's battery — Steam then shows something truthful.
-- **Report rate:** send at the sensor rate, capped at ~120 Hz as the starting target; adjust after M1 measures real behavior. Never batch or skip frames to save work — stale motion reads as lag.
+- **Input report `0x01`** (the small report; the descriptor registered since M1) carries: steering (byte 0, unsigned, center 128 — the fused wheel angle), sticks at center, hat released, the send counter, and pedals (byte 7 = brake/L2, byte 8 = throttle/R2). The byte map lives in the M1/M2 specs and the native packer — never from memory.
+- **The `0x11` motion-block path is not used.** A real DS4 switches to report `0x11` when the host reads calibration; on this stack↔Windows pair the full descriptor that declares `0x11` never installed (M1 finding), and the full-descriptor retry experiment was declined by the user (2026-11-08). M2 steering therefore rides the `0x01` axis, which racing games bind natively like any DirectInput wheel. Steam-Input extras (universal gyro, rumble into Steam) need non-disguise routes — decided when M3 nears.
+- **Output reports:** rumble (`0x11` over BT) arrives via `onInterruptData`/`onSetReport`; M2 logs it only. Note the small descriptor declares no output report — whether hosts can address rumble at all on this descriptor is part of the M3 decision.
+- **Host identity limit:** the phone advertises its own VID/PID; Steam classifies the device **Generic Gamepad** (measured 2026-11-08, final). The M2 wheel needs no Steam blessing.
+- **Wheel semantics:** `SensorFusion` (gyro fast path + rotation-vector drift correction, gravity-aware axis) produces the angle; `WheelModel` (re-zero → deadzone → sensitivity → curve → clamp) maps it to the byte.
+- **Report rate:** the native sender tick caps at ~120 Hz with latest-state semantics. Never batch or skip frames to save work — stale motion reads as lag.
 - **Byte-faithfulness rule:** any change to the descriptor or report packing requires a device test on the user's PC before merge (CONVENTIONS.md).
 
 ### Data flows
 
-1. **Input path (hot loop):** sensor event → `SensorFusionService` → `WheelModel` (clamp to ±range/2, deadzone, response curve) → `HidBridge` → `HidPlugin.packReport` → `sendReport`. Budget: end-to-end under ~10 ms on the phone; no allocations in the hot loop; vibration never runs on this path's thread.
-2. **Haptic path (cold loop):** `onOutputReport` → parse motor bytes → `HapticEngine` → `Vibrator` waveform. Rate-limited; drops gracefully on devices without amplitude control.
-3. **Pairing lifecycle:** app registers as HID device on launch → user pairs from the PC's Bluetooth settings (app guides with on-screen steps) → state machine tracks the connection and surfaces it in the UI (see [UIUX.md](UIUX.md) constraints). Re-zeroing the wheel is a user action, always available.
+1. **Input path (hot loop, native — ADR-012):** sensor event (dedicated HandlerThread) → `SensorFusion` → fused angle via a volatile → sender tick on `btExecutor` (≤120 Hz, latest state) → `WheelModel` → `Ds4InputPacker` (dedupe, counter) → `sendReport`. Zero channel crossings and no allocations per event. Budget: end-to-end under ~10 ms on the phone; vibration never runs on this path's thread.
+2. **Haptic path (cold loop, M3):** `onOutputReport` → parse motor bytes → `HapticEngine` → `Vibrator` waveform. Rate-limited; drops gracefully on devices without amplitude control.
+3. **Wheel UI path:** native tick → ≤60 Hz wheel event stream → Dart `ValueNotifier` → the wheel arc painter (no animation curves; 1-frame reaction budget). Pedals/settings cross the channel Dart→Kotlin at touch/UI rate and merge into the owned report.
+4. **Pairing lifecycle:** app registers as HID device on launch → user pairs from the PC's Bluetooth settings (the connection sheet guides with in-app discoverable + bonded-host Connect). Re-zeroing the wheel is a user action, always reachable during play.
 
 ### Performance budget
 
@@ -116,12 +116,12 @@ Break any of these and the product degrades in ways users feel:
 app/
   lib/
     main.dart
-    sensors/        SensorFusionService, WheelModel
-    hid/            HidBridge (Dart side)
-    haptics/        HapticEngine
-    layouts/        wheel, gamepad, settings, connection screens
+    hid/            HidBridge (lifecycle, commands), wheel_frame.dart
+    layouts/        schema.dart, layout_engine.dart, wheel_layout.dart,
+                    wheel_screen.dart, sheets, widgets/
   android/
-    app/src/main/kotlin/.../HidPlugin.kt      the DS4 emulation core
+    app/src/main/kotlin/.../HidPlugin.kt        the DS4 emulation core + hot loop
+    .../SensorFusion.kt, WheelModel.kt, Ds4InputPacker.kt, Ds4Descriptors.kt
 docs/
   specs/          M1-M3 specs (byte maps live here)
 ```

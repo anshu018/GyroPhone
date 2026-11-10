@@ -2,11 +2,11 @@
 
 The living snapshot. Read this first, every session, human or agent. Update it at the end of every session and after every milestone (contract in [AGENTS.md](AGENTS.md)).
 
-**Last updated:** 2026-11-11
-**Current phase:** Phase 0 — **M2 in progress** (spec approved 2026-11-11; implementation started)
-**Current goal:** implement the M2 wheel per `docs/specs/M2-wheel.md` (native hot loop → wheel screen → gates)
-**Next action:** Kotlin math core (SensorFusion, WheelModel, Ds4InputPacker) with JVM tests; then HidPlugin wiring; then Dart wheel screen
-**Blockers:** none — device-test day needs the user (~45 min, Nord 5 + PC Bluetooth), scheduled after code is complete
+**Last updated:** 2026-11-11 (late)
+**Current phase:** Phase 0 — **M2 code complete**; device tests remain
+**Current goal:** device-test day for M2 (needs the user, ~45 min): pair, joy.cpl sweep, game binding, 10-min drift, latency recording
+**Next action:** user plugs in the Nord 5 (USB) → run the device-test ladder in the M2 spec's task 8
+**Blockers:** none in code; waiting on the user's device session
 
 ## Completed
 
@@ -26,12 +26,12 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 
 ## In progress
 
-- Nothing.
+- **M2 implementation, code complete (2026-11-11)**: native hot loop (`SensorFusion`/`WheelModel`/`Ds4InputPacker` + HidPlugin tick), wheel cockpit UI (schema/engine/wheel screen/pedals/sheets), bridge commands, HIGH_SAMPLING_RATE_SENSORS. Gates green: analyze 0 findings, 23/23 Dart, 38 Kotlin JVM (7 descriptor + 14 wheel-model + 10 fusion + 7 packer). Test-caught pre-device: gyro integration overshoot (÷rate fix), deadzone full-lock byte loss. Device tests pending (Ver-1 Steps 3–4 remain IN PROGRESS until they pass).
 
 ## Next, in order
 
-1. **Get the M2 spec approved** (`docs/specs/M2-wheel.md` — written 2026-11-11 with the corrected architecture: sensor fusion → wheel angle → plain steering AXIS in report `0x01`, native Kotlin hot loop, full cockpit layout v1; Steam classification irrelevant to the wheel).
-2. On approval, implement per the spec's task list (sensor pipeline, wheel model, native report owner, wheel layout, connection sheet).
+1. **M2 device-test day (needs the user)**: Nord 5 over USB → install → pair from the PC (app foreground!) → joy.cpl steering-byte sweep (byte-faithfulness) → BeamNG/Assetto Corsa bind `X Axis` to steering + drive with pedals → 10-min drift check → record sensor-path latency → repeat the sensor sanity on the Nothing Phone 1. Capture per-game binding steps for the Step 9 guide.
+2. Tick ROADMAP M2 criteria that pass; record latency/drift numbers in the M2 spec + RESEARCH.md; resolve the spec's open questions (RV vs GAME_ROTATION_VECTOR, quantization feel, X vs Rz axis).
 3. Rumble (M3) decision deferred; its option menu no longer includes the full-descriptor disguise (declined by the user, see Open questions).
 
 ## Open questions

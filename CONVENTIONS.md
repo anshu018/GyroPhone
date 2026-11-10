@@ -25,11 +25,11 @@ If precedence does not resolve a conflict, stop and ask the user. Do not guess.
 app/
   lib/
     main.dart
-    sensors/        sensor fusion + 900° wheel model
-    hid/            platform-channel bridge (Dart side)
+    hid/            platform-channel bridge (Dart side): lifecycle, wheel commands
     haptics/        waveform engine
-    layouts/        wheel, gamepad, settings, connection screens
-  android/app/src/main/kotlin/.../HidPlugin.kt   DS4 emulation core
+    layouts/        layout schema + engine, wheel cockpit, connection/settings sheets
+  android/app/src/main/kotlin/.../HidPlugin.kt   DS4 emulation core + native hot loop
+                  (sensors live native: SensorFusion.kt, WheelModel.kt, Ds4InputPacker.kt — ADR-012)
 firmware/           (Phase 1+) ESP32, OpenBot-derived
 docs/               VISION, RESEARCH, ARCHITECTURE, ROADMAP, DECISIONS, UIUX, specs/
 ```
