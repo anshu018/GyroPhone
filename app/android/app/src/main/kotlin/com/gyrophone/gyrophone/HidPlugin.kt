@@ -773,7 +773,9 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         emitWheelStateMaybe(now)
         if (now - lastHeartbeatNanos >= HEARTBEAT_NS) {
             lastHeartbeatNanos = now
-            logD("tick armed=$armed linked=$linked angle=${latestSample()?.first} pedals=$pedalThrottle/$pedalBrake sends=$sendsSinceReconnect")
+            val rateSeconds = (now - lastRateSampleNanos) / 1e9f
+            val liveHz = if (rateSeconds > 0f) ((sensorEventCount - lastRateSampleCount) / rateSeconds) else 0f
+            logD("tick armed=$armed linked=$linked angle=${latestSample()?.first} pedals=$pedalThrottle/$pedalBrake sends=$sendsSinceReconnect sensorHz=$liveHz")
         }
         if (!armed || !linked) return
         if (now - lastSendNanos < MIN_SEND_INTERVAL_NS) return

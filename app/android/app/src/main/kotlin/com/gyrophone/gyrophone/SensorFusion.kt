@@ -28,8 +28,16 @@ class SensorFusion {
 
     enum class AxisMode { AUTO, FLAT, CRADLE }
 
-    /** Fraction of the remaining rotation-vector error corrected per event. */
-    private val rvGain = 0.05f
+    /**
+     * Fraction of the remaining rotation-vector error corrected per event.
+     * Deliberately tiny: on this OxygenOS build the RV trails physical motion
+     * by hundreds of ms (heavy OEM smoothing, device session 2026-11-19), and
+     * a strong pull drags the whole estimate into that lag — the user felt it
+     * as ~1 s of steering delay. At 0.005 the drift correction still
+     * converges within a couple of seconds without transmitting the RV's
+     * latency into the wheel angle.
+     */
+    private val rvGain = 0.005f
 
     // Orientation estimate, device→world, (w, x, y, z).
     private var qw = 1f

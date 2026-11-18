@@ -92,7 +92,7 @@ class SensorFusionTest {
         )
         // The truth: still the 90° pose. Feeding it must pull the estimate back.
         val truth = axisAngle(0f, 0f, 1f, -90.0)
-        repeat(300) { feedRv(fusion, truth) }
+        repeat(2000) { feedRv(fusion, truth) }
         assertEquals(90f, fusion.wheelAngleDeg(), 0.1f)
     }
 
@@ -133,13 +133,13 @@ class SensorFusionTest {
         assertTrue(fusion.isFlatGrip())
         // 55° tilt (≈ 0.57 < EXIT_FLAT) → cradle.
         feedRv(fusion, axisAngle(1f, 0f, 0f, 55.0))
-        repeat(50) { feedRv(fusion, axisAngle(1f, 0f, 0f, 55.0)) }
+        repeat(800) { feedRv(fusion, axisAngle(1f, 0f, 0f, 55.0)) }
         assertFalse(fusion.isFlatGrip())
         // Back inside the band (45°) → stays cradle.
-        repeat(50) { feedRv(fusion, axisAngle(1f, 0f, 0f, 45.0)) }
+        repeat(800) { feedRv(fusion, axisAngle(1f, 0f, 0f, 45.0)) }
         assertFalse(fusion.isFlatGrip())
         // Above ENTER_FLAT (35°, ≈ 0.82) → flat again.
-        repeat(50) { feedRv(fusion, axisAngle(1f, 0f, 0f, 35.0)) }
+        repeat(800) { feedRv(fusion, axisAngle(1f, 0f, 0f, 35.0)) }
         assertTrue(fusion.isFlatGrip())
     }
 
