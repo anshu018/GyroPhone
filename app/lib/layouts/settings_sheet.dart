@@ -31,6 +31,28 @@ class SettingsSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text('Wheel settings', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text('Presets', style: Theme.of(context).textTheme.titleSmall),
+            Wrap(
+              spacing: 8,
+              children: [
+                ActionChip(
+                  label: const Text('Wheel rig · 900°'),
+                  tooltip: 'Mounted/cradle grip — full lock takes 1.25 turns, like a real wheel',
+                  onPressed: () => onChanged(_with(rangeDeg: 900, curve: 'linear')),
+                ),
+                ActionChip(
+                  label: const Text('F1 handheld · 240°'),
+                  tooltip: 'Held in hands — a small wrist twist reaches full lock',
+                  onPressed: () => onChanged(_with(rangeDeg: 240, curve: 'linear')),
+                ),
+                ActionChip(
+                  label: const Text('Arcade · 360°'),
+                  tooltip: 'Middle ground between the two',
+                  onPressed: () => onChanged(_with(rangeDeg: 360, curve: 'linear')),
+                ),
+              ],
+            ),
             _slider(
               label: 'Range — ${params.rangeDeg.toStringAsFixed(0)}°',
               value: params.rangeDeg,
