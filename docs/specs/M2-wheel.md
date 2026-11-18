@@ -96,6 +96,12 @@ No descriptor change. The 79-byte small descriptor stays exactly as registered i
 - **Real sensor rates** on both devices (gyro + rotation vector, Hz).
 - **Drift:** 10-minute session, no manual re-zero; residual drift recorded.
 
+### R9 — Measurements and evidence (recorded 2026-11-18)
+
+- **Sensor-path latency (Nord 5): avg 1.12 ms, p95 2.26–2.88 ms** over a full 128-sample ring while actively steering — **the <10 ms budget is met with ~9× margin**. The phone-attributable path is no longer the latency risk.
+- **Byte-faithfulness device test: PASSED.** Steering sweeps the DirectInput **X axis** (the crosshair in joy.cpl) proportionally with the wheel; sign verified — clockwise (right) moves the axis right; at 67° held the expected byte was 147 (≈57.6%), consistent with the on-screen angle. **Pedals byte-perfect:** holding THROTTLE/BRAKE pins the Y Rotation (R2/byte 8) and X Rotation (L2/byte 7) bars full; all other axes hold their exact rest states (sticks 0x80, hat released, triggers 0).
+- **The "dead axis" case (2026-11-11) — closed as a test error, not a product error.** Windows' friendly-name cache lists the Nord as **"Blugaemand Gamepad"** (the name from its first-ever M1-era pairing; M1 pitfall, now with teeth) while the Nothing Phone 1 owns the "Wireless Controller" row. Two sessions of axis watching targeted the wrong row; the phone was sending accepted reports the whole time (heartbeat evidence). Control experiment on the Nothing Phone 1 (2026-11-18) exposed the mapping: its touch sticks moved the "Wireless Controller" entry, not the Nord's. **Rule for future sessions: identify controllers by MAC→devnode mapping or by moving input, never by row name.**
+
 ## Acceptance criteria
 
 Mirrors [ROADMAP.md](../ROADMAP.md) M2, re-framed to the axis path (ROADMAP M2's section text is updated in the same change). A box is ticked only after the criterion passes on hardware.
