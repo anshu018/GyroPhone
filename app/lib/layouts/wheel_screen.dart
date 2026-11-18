@@ -9,7 +9,6 @@ import 'layout_engine.dart';
 import 'schema.dart';
 import 'settings_sheet.dart';
 import 'wheel_layout.dart';
-
 /// The racing cockpit: renders [wheelLayoutV1] through the layout engine and
 /// hosts the connection/settings sheets. Look is deliberately temporary per
 /// the UIUX interim rule — function first (M2 spec R7/R8).
@@ -26,8 +25,9 @@ class _WheelScreenState extends State<WheelScreen> with WidgetsBindingObserver {
   /// Local settings state, live-applied; persistence is M3 (Ver-1 Step 7).
   WheelParams _params = WheelParams.defaults;
 
-  /// Currently held pedal targets ('r2'/'l2'); both bytes re-merged on every
-  /// change so releasing one pedal never forgets the other (M2 spec R5).
+  /// Currently held pedal/button targets; both pedal bytes and the button
+  /// bytes re-merge on every change so releasing one control never disturbs
+  /// the others (M2 spec R5, layout v1.1).
   final Set<String> _heldPedals = {};
 
   @override
@@ -62,6 +62,15 @@ class _WheelScreenState extends State<WheelScreen> with WidgetsBindingObserver {
           _heldPedals.contains('r2') ? 255 : 0,
           _heldPedals.contains('l2') ? 255 : 0,
         ));
+      case Ds4Button(:final id):
+        pressed ? _heldPedals.add(id) : _heldPedals.remove(id);
+        var face = 0;
+        var misc = 0;
+        for (final held in _heldPedals) {
+          face |= kDs4FaceBits[held] ?? 0;
+          misc |= kDs4MiscBits[held] ?? 0;
+        }
+        unawaited(widget.bridge.setButtons(face, misc));
       case SteeringAxis():
         widget.bridge.log.error('steering axis is sensor-driven; hold ignored');
     }

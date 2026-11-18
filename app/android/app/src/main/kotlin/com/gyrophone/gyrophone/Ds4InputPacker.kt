@@ -31,11 +31,21 @@ class Ds4InputPacker {
     /**
      * Fills the payload from the current state and reports whether it differs
      * from the last sent report (counter excluded). When true, the counter has
-     * advanced and the caller must send.
+     * advanced and the caller must send. [faceBits]/[miscBits] carry the held
+     * DS4 button contributions from the wheel layout's action buttons (byte 4
+     * high nibble / byte 5 — M2 layout v1.1).
      */
-    fun pack(steeringByte: Int, throttleByte: Int, brakeByte: Int): Boolean {
+    fun pack(
+        steeringByte: Int,
+        throttleByte: Int,
+        brakeByte: Int,
+        faceBits: Int = 0,
+        miscBits: Int = 0,
+    ): Boolean {
         resetPayload()
         payload[0] = steeringByte.coerceIn(0, 255).toByte()
+        payload[4] = (0x08 or (faceBits.coerceIn(0, 255) and 0xF0)).toByte()
+        payload[5] = miscBits.coerceIn(0, 255).toByte()
         payload[7] = brakeByte.coerceIn(0, 255).toByte()
         payload[8] = throttleByte.coerceIn(0, 255).toByte()
         if (lastSentValid && sameExceptCounter()) {

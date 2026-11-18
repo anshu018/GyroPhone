@@ -126,6 +126,8 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
     private var hostAddress: String? = null
     private var pedalThrottle = 0
     private var pedalBrake = 0
+    private var buttonFaceBits = 0 // byte 4 high nibble: Square/Cross/Circle/Triangle
+    private var buttonMiscBits = 0 // byte 5: L1/R1/... (M2 layout v1.1 action buttons)
     private var lastSendNanos = 0L
     private var streamingNotified = false
     private val latencyRing = FloatArray(LATENCY_RING_SIZE)
@@ -423,6 +425,7 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
                 replyOnMain(result) { true }
             }
             "setPedals" -> setPedals(call, result)
+            "setButtons" -> setButtons(call, result)
             "setStreaming" -> setStreaming(call, result)
             "register" -> btExecutor.execute { register(result) }
             "unregister" -> btExecutor.execute {
@@ -719,6 +722,22 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         }
     }
 
+    /** Action-button hold state from the wheel layout (M2 layout v1.1):
+     *  [faceBits] land in byte 4's high nibble, [miscBits] in byte 5. */
+    private fun setButtons(call: MethodCall, result: Result) {
+        val face = call.argument<Int>("face")
+        val misc = call.argument<Int>("misc")
+        if (face == null || misc == null) {
+            result.error("args", "setButtons requires face and misc", null)
+            return
+        }
+        btExecutor.execute {
+            buttonFaceBits = face.coerceIn(0, 255)
+            buttonMiscBits = misc.coerceIn(0, 255)
+            replyOnMain(result) { true }
+        }
+    }
+
     private fun setStreaming(call: MethodCall, result: Result) {
         val enabled = call.argument<Boolean>("enabled")
         if (enabled == null) {
@@ -759,7 +778,7 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         if (now - lastSendNanos < MIN_SEND_INTERVAL_NS) return
         val sample = latestSample() ?: return
         val steering = wheelModel.apply(sample.first)
-        if (!packer.pack(steering, pedalThrottle, pedalBrake)) return
+        if (!packer.pack(steering, pedalThrottle, pedalBrake, buttonFaceBits, buttonMiscBits)) return
         val address = hostAddress ?: return
         val ok = sendReport(address, Ds4Descriptors.REPORT_ID_INPUT_SMALL, packer.currentPayload())
         if (ok) {

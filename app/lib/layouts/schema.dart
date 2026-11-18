@@ -31,6 +31,29 @@ class AnalogTrigger extends HidTarget {
   final String id;
 }
 
+/// A DS4 button slot (byte 4 face bits / byte 5 misc bits — M1 spec byte map).
+/// LFS's default wheel-button bindings line up with these: cross = button 2,
+/// l1 = button 5, r1 = button 6.
+class Ds4Button extends HidTarget {
+  const Ds4Button(this.id);
+
+  final String id;
+}
+
+/// Byte contributions for each Ds4Button id: face buttons occupy byte 4's high
+/// nibble (bit 4 stays the hat's released state), misc buttons live in byte 5.
+const Map<String, int> kDs4FaceBits = <String, int>{
+  'square': 0x10,
+  'cross': 0x20,
+  'circle': 0x40,
+  'triangle': 0x80,
+};
+
+const Map<String, int> kDs4MiscBits = <String, int>{
+  'l1': 0x01,
+  'r1': 0x02,
+};
+
 /// Where and what a control is. Coordinates are viewport fractions.
 sealed class WidgetSpec {
   const WidgetSpec({required this.x, required this.y, required this.w, required this.h});

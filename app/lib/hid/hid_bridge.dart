@@ -184,6 +184,18 @@ class HidBridge extends ChangeNotifier {
     }
   }
 
+  /// Action-button hold state from the wheel layout (M2 layout v1.1):
+  /// [faceBits] merge into byte 4's high nibble, [miscBits] into byte 5.
+  Future<void> setButtons(int faceBits, int miscBits) async {
+    try {
+      await _invoke('setButtons', {'face': faceBits, 'misc': miscBits});
+    } on PlatformException catch (e) {
+      log.error('setButtons failed', e);
+    } on MissingPluginException {
+      log.state('setButtons skipped — platform channel unavailable');
+    }
+  }
+
   /// Bonded hosts for the connection sheet (M1 task 11 fold-in).
   Future<List<BondedHost>> bondedHosts() async {
     try {
