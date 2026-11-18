@@ -1,10 +1,14 @@
 package com.gyrophone.gyrophone
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * The packer streams continuously (real-DS4 behavior): every pack fills the
+ * payload and advances the counter — there is no dedupe. The sender sends
+ * every tick while armed and linked.
+ */
 class Ds4InputPackerTest {
 
     @Test
@@ -20,10 +24,9 @@ class Ds4InputPackerTest {
     }
 
     @Test
-    fun `first pack always sends and writes steering and pedals into the right bytes`() {
+    fun `pack writes steering and pedals into the right bytes`() {
         val packer = Ds4InputPacker()
-        val sent = packer.pack(steeringByte = 255, throttleByte = 200, brakeByte = 40)
-        assertTrue(sent)
+        packer.pack(steeringByte = 255, throttleByte = 200, brakeByte = 40)
         val bytes = packer.currentPayload()
         assertEquals(255.toByte(), bytes[0])
         assertEquals(0x80.toByte(), bytes[1])
@@ -36,49 +39,14 @@ class Ds4InputPackerTest {
     }
 
     @Test
-    fun `identical state is deduped`() {
-        val packer = Ds4InputPacker()
-        assertTrue(packer.pack(128, 0, 0))
-        assertFalse(packer.pack(128, 0, 0))
-    }
-
-    @Test
-    fun `any changed byte re-sends`() {
-        val packer = Ds4InputPacker()
-        assertTrue(packer.pack(128, 0, 0))
-        assertTrue(packer.pack(140, 0, 0))
-        assertTrue(packer.pack(140, 0, 10))
-        assertTrue(packer.pack(140, 20, 10))
-    }
-
-    @Test
     fun `counter advances in byte 6 bits 2 to 7 and wraps at 64`() {
         val packer = Ds4InputPacker()
         val seen = HashSet<Int>()
         for (i in 0 until 130) {
-            packer.pack(128 + (i % 2), 0, 0) // alternate so every pack sends
+            packer.pack(128 + (i % 2), 0, 0)
             seen.add((packer.currentPayload()[6].toInt() and 0xFF) shr 2)
         }
         assertEquals(64, seen.size) // full 6-bit cycle seen = wrap happened
-    }
-
-    @Test
-    fun `invalidateLastSent forces a resend of the identical state`() {
-        val packer = Ds4InputPacker()
-        assertTrue(packer.pack(200, 0, 0))
-        assertFalse(packer.pack(200, 0, 0))
-        packer.invalidateLastSent()
-        assertTrue(packer.pack(200, 0, 0))
-    }
-
-    @Test
-    fun `byte clamping cannot corrupt the report`() {
-        val packer = Ds4InputPacker()
-        packer.pack(-50, 300, 999)
-        val bytes = packer.currentPayload()
-        assertEquals(0.toByte(), bytes[0])
-        assertEquals(255.toByte(), bytes[8])
-        assertEquals(255.toByte(), bytes[7])
     }
 
     @Test
@@ -103,13 +71,22 @@ class Ds4InputPackerTest {
     }
 
     @Test
-    fun `button release re-sends after dedupe`() {
+    fun `releasing buttons returns the report to neutral`() {
         val packer = Ds4InputPacker()
-        assertTrue(packer.pack(128, 0, 0, faceBits = 0x20, miscBits = 0x01))
-        assertFalse(packer.pack(128, 0, 0, faceBits = 0x20, miscBits = 0x01))
-        assertTrue(packer.pack(128, 0, 0, faceBits = 0x00, miscBits = 0x00))
+        packer.pack(128, 0, 0, faceBits = 0x20, miscBits = 0x01)
+        packer.pack(128, 0, 0)
         val bytes = packer.currentPayload()
         assertEquals(0x08.toByte(), bytes[4])
         assertEquals(0x00.toByte(), bytes[5])
+    }
+
+    @Test
+    fun `byte clamping cannot corrupt the report`() {
+        val packer = Ds4InputPacker()
+        packer.pack(-50, 300, 999)
+        val bytes = packer.currentPayload()
+        assertEquals(0.toByte(), bytes[0])
+        assertEquals(255.toByte(), bytes[8])
+        assertEquals(255.toByte(), bytes[7])
     }
 }

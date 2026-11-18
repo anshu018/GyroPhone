@@ -750,11 +750,12 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
             if (!enabled && wasArmed && linked) {
                 // Focus loss / explicit disarm: the host must never hold a held
                 // wheel angle or a pressed pedal (M2 spec R1) — send neutral.
-                if (packer.pack(WheelModel.CENTER, 0, 0)) {
-                    val address = hostAddress
-                    if (address != null) {
-                        sendReport(address, Ds4Descriptors.REPORT_ID_INPUT_SMALL, packer.currentPayload())
-                    }
+                // (Disarm also stops the tick, so this neutral stays on the
+                // wire until re-arm.)
+                packer.pack(WheelModel.CENTER, 0, 0)
+                val address = hostAddress
+                if (address != null) {
+                    sendReport(address, Ds4Descriptors.REPORT_ID_INPUT_SMALL, packer.currentPayload())
                 }
             }
             replyOnMain(result) { true }
@@ -778,7 +779,11 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
         if (now - lastSendNanos < MIN_SEND_INTERVAL_NS) return
         val sample = latestSample() ?: return
         val steering = wheelModel.apply(sample.first)
-        if (!packer.pack(steering, pedalThrottle, pedalBrake, buttonFaceBits, buttonMiscBits)) return
+        // Continuous streaming (real-DS4 behavior): pack + send EVERY tick
+        // while armed and linked — never go silent when inputs are still, or
+        // the host sniffs the idle link and steering lags ~1 s on wake-up
+        // (device finding 2026-11-19). A failed send simply retries next tick.
+        packer.pack(steering, pedalThrottle, pedalBrake, buttonFaceBits, buttonMiscBits)
         val address = hostAddress ?: return
         val ok = sendReport(address, Ds4Descriptors.REPORT_ID_INPUT_SMALL, packer.currentPayload())
         if (ok) {
@@ -791,10 +796,6 @@ class HidPlugin(private val context: Context, messenger: BinaryMessenger) {
                 streamingNotified = true
                 emit(EVENT_STREAMING) { mapOf("started" to true) }
             }
-        } else {
-            // A rejected send must not poison dedupe — the host may not hold
-            // the report, so the next identical state re-sends (M1 semantics).
-            packer.invalidateLastSent()
         }
     }
 
