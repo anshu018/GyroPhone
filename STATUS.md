@@ -2,11 +2,11 @@
 
 The living snapshot. Read this first, every session, human or agent. Update it at the end of every session and after every milestone (contract in [AGENTS.md](AGENTS.md)).
 
-**Last updated:** 2026-11-11 (late)
-**Current phase:** Phase 0 — **M2 code complete**; device tests remain
-**Current goal:** device-test day for M2 (needs the user, ~45 min): pair, joy.cpl sweep, game binding, 10-min drift, latency recording
-**Next action:** user plugs in the Nord 5 (USB) → run the device-test ladder in the M2 spec's task 8
-**Blockers:** none in code; waiting on the user's device session
+**Last updated:** 2026-11-20
+**Current phase:** Phase 0 — **M2 hardware-validated: the wheel drives a real racing game** (6/8 criteria ticked; 2 open pending external conditions)
+**Current goal:** close M2's last two criteria — BeamNG/AC native-binding check (needs the user to acquire a title) and the Nothing Phone 1 sensor sanity (phone was powered off) — then M3
+**Next action:** user's call on the game criterion (tick with LFS substitution recorded, or test BeamNG/AC when acquired); Nothing Phone 1 sanity whenever it's powered; then M3 spec
+**Blockers:** none in code
 
 ## Completed
 
@@ -26,15 +26,13 @@ The living snapshot. Read this first, every session, human or agent. Update it a
 
 ## In progress
 
-- **M2 implementation, code complete (2026-11-11)**: native hot loop (`SensorFusion`/`WheelModel`/`Ds4InputPacker` + HidPlugin tick), wheel cockpit UI (schema/engine/wheel screen/pedals/sheets), bridge commands, HIGH_SAMPLING_RATE_SENSORS. Gates green: analyze 0 findings, 23/23 Dart, 38 Kotlin JVM (7 descriptor + 14 wheel-model + 10 fusion + 7 packer). Test-caught pre-device: gyro integration overshoot (÷rate fix), deadzone full-lock byte loss. Device tests pending (Ver-1 Steps 3–4 remain IN PROGRESS until they pass).
+- **M2 device validation COMPLETE (2026-11-18/20, Nord 5 + LFS demo): the user drove laps with the phone as the wheel — steering/throttle/brake/gears natively bound, no Steam remapping. "Turning, handling all things were really good."** Byte-faithfulness passed (X sweep, correct sign, pedals byte-perfect); latency avg 1.12 ms / p95 2.26 ms (9× budget margin); ~10-minute drive with no re-zero needed; presets (Wheel 900°/F1 240°/Arcade 360°) and the action-button row (GEAR±/H-BRAKE on R1/L1/Cross) shipped mid-session from the user's feedback. Two criteria remain open, both external: the criterion's named titles (BeamNG/AC — LFS stood in) and the second-device sensor sanity (Nothing Phone 1 powered off). Full evidence in the M2 spec R9 + RESEARCH.md.
+- Fixes shipped this session: continuous report streaming (dedupe let the BT link idle into sniff mode — real-DS4 behavior restored), RV fusion gain 0.005 (OEM rotation-vector smoothing was transmitting its own lag into the angle — researched with sources), v1.1 action row, presets, heartbeat instrumentation.
 
 ## Next, in order
 
-1. **M2 device test — resume the dead-axis hunt (all state below is self-contained).**
-   Facts: phone EXONERATED (heartbeat-counted accepted sends during turns, latency ring filling, avg 1.12 ms / p95 2.83 ms — budget met); fresh bond + freshly-installed HID collection on the PC; axis still frozen at center in joy.cpl. Re-pairing does NOT fix it. Prior-art research (blugaemand TODO "Known constraints"): `PID&0000` devnode identity is NORMAL for Android (their Xiaomi publishes the same) — do not chase it; "hosts cache the descriptor at pair time" re-confirmed.
-   **First diagnostic (5 min, no user): `adb shell btmon` streaming while the user turns the wheel.** If our report bytes appear as ACL TX → the phone transmits and the PC drops → the reset is a **PC reboot (USER'S action — never-do #10; it also ends the agent session, so give the user the post-reboot steps first: unlock → open GyroPhone app → it auto-connects → joy.cpl → Properties → turn wheel)**. If NO TX → the phone's stack accepts the binder call but never transmits (its connection bookkeeping is broken) → re-register + BT toggle, then reconsider.
-   Then (in order): axis sweep in joy.cpl (byte-faithfulness ✓ criterion), pedals in joy.cpl, game bind (LFS demo or BeamNG/AC per the chat-agreed ladder), 10-min drift, second device (Nothing Phone 1 — needs the slot check first: `ps -A | grep -v gyrophone`).
-2. Tick ROADMAP M2 criteria that pass; record final numbers in the M2 spec + here; resolve the spec's open questions (RV vs GAME_ROTATION_VECTOR — decided by the drift session; quantization feel; X vs Rz).
+1. **M2 close-out (two open criteria, both external):** (a) BeamNG or Assetto Corsa native-binding check — the user acquires a title (AC often ~$4 on sale), one drive session ticks it, or the user accepts the recorded LFS substitution; (b) Nothing Phone 1 M2 sensor sanity — install the M2 APK when the phone is powered on, verify the wheel screen against that device's entry in joy.cpl (identify by moving input, never the row name).
+2. **M3 — "The feel"** (haptics, gamepad layout via the same schema, settings+persistence, onboarding, ship): write `docs/specs/M3-feel.md` per the template, user approval first. Carry the name-cache identification rule and never-do #10 into M3's device tests.
 3. Rumble (M3) decision deferred; full-descriptor disguise stays declined.
 
 ## Open questions

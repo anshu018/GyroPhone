@@ -151,6 +151,13 @@ Pre-filled from the [M1 spec](M1-pair-as-ds4.md), [RESEARCH.md](../RESEARCH.md),
 - A rejected send to a merely-registered host still errors native-side — gate sends on the connected state and invalidate dedupe on any failure (M1 semantics, now native).
 - Do not claim the <10 ms budget met without the recorded measurement (never-do #9).
 
+Appended during the 2026-11-19/20 drive sessions:
+
+- **A real DS4 streams continuously — never dedupe input reports on an idle input.** Holding the throttle with a still wheel idled the Bluetooth link; the host sniffed it and the first second of turning crawled. The packer now fills+advances every call and the sender streams every 120 Hz-capped tick while armed and linked.
+- **The rotation vector is the latency source, not the transport.** Measure before tuning the radio: sensors 780 Hz, fusion 1.12 ms, streaming 120 Hz — and the lag persisted until the RV correction gain dropped 0.05 → 0.005. OEM fusion smoothing is real and product-category-sized (RESEARCH.md has sources).
+- **PC-side load stacks onto perceived input latency.** The user's laptop was hot with a background renderer during the first drive; part of the "1 second" was never ours. For feel checks, close background work first.
+- **LFS specifics that cost time:** its controller list shows stale cached names too (pick "Blugaemand Gamepad"); analog pedals bind on the **Axes / FF** tab, not the Buttons tab (Buttons = digital); its default wheel-button bindings (button 2 handbrake, 5/6 shift) already match DS4 Cross/L1/R1.
+
 Appended during the 2026-11-11 device session (Nord 5):
 
 - **One app holds the HID registration slot, and a stale third-party holder survives everything short of stopping it.** `registerApp` failed with `failed because another app is registered` — the holder was blugaemand (installed for the M1 control experiment, process alive). The M1-documented Bluetooth-toggle cure did NOT clear it while the holder process lived; force-stopping the holder app + a Bluetooth toggle did. Next session: `adb shell ps -A | grep -v gyrophone` for other HID-device apps BEFORE debugging our own registration.
@@ -164,7 +171,14 @@ Appended during the 2026-11-11 device session (Nord 5):
 
 ## Lessons learned
 
-Filled in when the milestone closes.
+Filled in as the milestone's hardware phase completes (2026-11-19/20; two acceptance criteria remain open pending external conditions — see ROADMAP.md):
+
+- **The wheel was working while we debugged it.** Two sessions of "dead axis" were a test-harness error: Windows' name cache listed the Nord under its first-ever pairing name ("Blugaemand Gamepad") while the second device owned "Wireless Controller". The control experiment on the second device exposed it in minutes — the M1 lesson (control experiments beat log archaeology) applied again, and the spec's R9 now carries the rule: identify controllers by MAC/devnode or by moving input, never by row name.
+- **Real controllers never go silent.** The M1-era identical-report dedupe let the Bluetooth link idle whenever the wheel sat still; the host sniffed the idle link and the first second of turning crawled (user-reported ~1 s). A real DS4 streams continuously — streaming every tick restored instant response and simplified the packer (dedupe/invalidate deleted).
+- **The fused sensor is the latency source, not the transport.** The full chain measured clean (sensors 780 Hz, fusion 1.12 ms, streaming 120 Hz) while the user still felt ~1 s — the OEM's rotation-vector smoothing was transmitting its own lag into the angle through the fusion correction. Raw-gyro-first with a whisper-gain correction (0.005) is the community-standard low-latency design (RESEARCH.md has sources); the user's feel-check confirmed smooth steering.
+- **User feedback drives real features.** The turn-count complaint (900° is exhausting handheld) became the presets feature; the missing-gears complaint became layout v1.1's action row. Both shipped same-session with tests.
+- **What the Pitfalls section missed until it bit:** the laptop's background rendering + heat stacked PC-side latency onto the phone-side investigation (the "1 second" was two problems); and the drift measurement needs plainer language — "hold straight, read the angle" confused; next time: "hold it like driving straight, tell me the number on screen".
+- **Next agent, before touching this milestone again:** the wheel WORKS end-to-end (LFS, native binding, both phones' transports proven). The two open criteria are external, not code: a BeamNG/Assetto Corsa native-binding check (user acquires the game) and the Nothing Phone 1 M2 sensor sanity (phone was powered off). Do not re-debug the transport.
 
 ## Open questions
 

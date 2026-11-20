@@ -112,7 +112,7 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 
 ## Step 3 — Sensor pipeline (fusion + wheel model)
 
-**Status: IN PROGRESS** (2026-11-11: spec approved; code complete — fusion/model/packer/hot loop/wheel screen all land with JVM+Dart tests; device tests remain) · Milestone: M2 · Depends on: 2
+**Status: IN PROGRESS** (2026-11-20: hardware validation COMPLETE — the user drove ~10 minutes in LFS with steering/throttle/brake/gears, no re-zero needed, latency 1.12 ms; 2 ROADMAP criteria remain open pending external conditions: BeamNG/AC title check, Nothing Phone 1 sensor sanity) · Milestone: M2 · Depends on: 2
 
 **Goal:** real steering — drift-free wheel angle at sensor rate, natively (ADR-012; the 0x11 motion block is out per the M2 spec's Step-2 disposition).
 
@@ -136,7 +136,7 @@ Update statuses as work completes: `NOT STARTED → IN PROGRESS → DONE`. Never
 
 ## Step 4 — Wheel layout v1
 
-**Status: IN PROGRESS** (2026-11-11: schema + engine + cockpit screen code complete with tests; on-device sync check remains) · Milestone: M2 · Depends on: 3
+**Status: IN PROGRESS** (2026-11-20: schema/engine/cockpit complete + driven in LFS — steering, pedals, gears, handbrake, presets all verified in-hand; the same 2 external criteria as Step 3 remain) · Milestone: M2 · Depends on: 3
 
 **Goal:** a usable racing cockpit screen — functional first, styling temporary ([docs/UIUX.md](docs/UIUX.md) interim rule).
 

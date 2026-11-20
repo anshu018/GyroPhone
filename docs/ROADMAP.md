@@ -55,13 +55,13 @@ Target: a stranger installs nothing on their PC, pairs their phone, and drives a
 
 **Acceptance criteria:**
 - [x] M2 spec written and approved (2026-11-11)
-- [ ] The fused wheel angle drives the steering axis of report `0x01`, and BeamNG or Assetto Corsa steers with it bound natively in-game (no Steam Input remapping)
-- [ ] Rotation range (up to 900°), deadzone, and sensitivity are configurable and take effect live
-- [ ] Re-zero works and is reachable during play
-- [ ] No manual re-zero needed during a 10-minute session (drift check)
-- [ ] Sensor-path latency measured and recorded against the <10 ms budget in [ARCHITECTURE.md](ARCHITECTURE.md)
-- [ ] Device test passes per the byte-faithfulness rule ([ARCHITECTURE.md](ARCHITECTURE.md)); sensor path verified on the second device
-- [ ] `flutter analyze`, `flutter test`, and `gradlew testDebugUnitTest` green
+- [ ] The fused wheel angle drives the steering axis of report `0x01`, and BeamNG or Assetto Corsa steers with it bound natively in-game (no Steam Input remapping) — *native binding demonstrated in the Live for Speed demo (2026-11-19: user drove laps — steering/throttle/brake/gears, "turning, handling all things were really good"); the criterion's named titles remain untested pending the user acquiring BeamNG or AC*
+- [x] Rotation range (up to 900°), deadzone, and sensitivity are configurable and take effect live (2026-11-19: presets Wheel 900° / F1 240° / Arcade 360° applied mid-session and felt immediately)
+- [x] Re-zero works and is reachable during play (2026-11-19)
+- [x] No manual re-zero needed during a 10-minute session (drift check) (2026-11-20: ~10-minute LFS drive, no re-zero used)
+- [x] Sensor-path latency measured and recorded against the <10 ms budget in [ARCHITECTURE.md](ARCHITECTURE.md) (2026-11-19: avg 1.12 ms, p95 2.26–2.88 ms — ~9× margin)
+- [ ] Device test passes per the byte-faithfulness rule ([ARCHITECTURE.md](ARCHITECTURE.md)); sensor path verified on the second device — *byte-faithfulness PASSED on the Nord 5 (2026-11-19: X-axis sweep with correct sign, pedal trigger bars byte-perfect); the second-device sensor sanity is pending (Nothing Phone 1 powered off)*
+- [x] `flutter analyze`, `flutter test`, and `gradlew testDebugUnitTest` green (2026-11-20)
 
 **Exit:** the user drives a racing game with the phone as the wheel.
 
